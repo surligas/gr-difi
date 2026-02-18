@@ -13,6 +13,8 @@
 #include <deque>
 #include <iterator>
 #include <pmt/pmt.h>
+#include <arpa/inet.h>
+
 
 #include <difi/difi_common.h>
 #include <difi/difi_source_cpp.h>
@@ -72,6 +74,8 @@ private:
       memcpy(&re, start, 2);
       int16_t imag;
       memcpy(&imag, start + 2, 2);
+      re = ntohs(re);
+      imag = ntohs(imag);
       return M(re, imag);
     }
 

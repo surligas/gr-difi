@@ -350,7 +350,9 @@ namespace gr {
     void difi_sink_cpp_impl<T>::pack_T(T val)
     {
       auto re = (static_cast<int16_t>(val.real()));
+      re = htons(re);
       auto im = (static_cast<int16_t>(val.imag()));
+      im = htons(im);
       memcpy(&d_out_buf[d_current_buff_idx], &re, d_unpack_idx_size);
       memcpy(&d_out_buf[d_current_buff_idx + d_unpack_idx_size], &im, d_unpack_idx_size);
     }
