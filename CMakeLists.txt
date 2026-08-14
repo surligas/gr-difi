@@ -115,6 +115,10 @@ endif(APPLE)
 ########################################################################
 find_package(Doxygen)
 
+# Only needed to build the C++ unit tests, so a missing component disables
+# them rather than failing the build.
+find_package(Boost COMPONENTS unit_test_framework)
+
 ########################################################################
 # PyBind11 Related
 ########################################################################

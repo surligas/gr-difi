@@ -20,6 +20,9 @@ list(APPEND difi_sources
     tcp_client.cc
     udp_socket.h
     udp_socket.cc
+    transport.hpp
+    udp_server.hpp
+    udp_server.cpp
 )
 
 set(difi_sources "${difi_sources}" PARENT_SCOPE)
@@ -63,6 +66,7 @@ include(GrTest)
 #include_directories()
 # List all files that contain Boost.UTF unit tests here
 list(APPEND test_difi_sources
+    qa_udp_server.cc
 )
 # Anything we need to link to for the unit tests go here
 list(APPEND GR_TEST_TARGET_DEPS gnuradio-difi)
@@ -72,8 +76,14 @@ if(NOT test_difi_sources)
     return()
 endif(NOT test_difi_sources)
 
+if(NOT TARGET Boost::unit_test_framework)
+    MESSAGE(STATUS "Boost.Test not found... skipping C++ unit tests")
+    return()
+endif()
+
 foreach(qa_file ${test_difi_sources})
-    GR_ADD_CPP_TEST("difi_${qa_file}"
+    get_filename_component(qa_name ${qa_file} NAME_WE)
+    GR_ADD_CPP_TEST("difi_${qa_name}"
         ${CMAKE_CURRENT_SOURCE_DIR}/${qa_file}
     )
 endforeach(qa_file)
