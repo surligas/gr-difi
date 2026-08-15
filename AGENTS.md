@@ -139,18 +139,21 @@ construction and the runtime path has no per-packet branching:
 
 - `udp_server` — **done**, bound endpoint, replies to the last peer heard from
 - `udp_client` — **done**, connected to a fixed remote endpoint (used by the sink)
-- `tcp_server` — not started (replaces `lib/tcp_server.*`, used by the source)
-- `tcp_client` — not started (replaces `lib/tcp_client.*`, used by the sink)
+- `tcp_server` — **done**, serves one peer at a time (used by the source)
+- `tcp_client` — not started (replaces `lib/tcp_client_legacy.*`, used by the sink)
 
 Until all four exist, `difi_source_cpp_impl` and `difi_sink_cpp_impl` still use
-the legacy classes; `lib/udp_socket.*`, `lib/tcp_server.*` and `lib/tcp_client.*`
-stay until then.
+the legacy classes; `lib/udp_socket.*`, `lib/tcp_server_legacy.*` and
+`lib/tcp_client_legacy.*` stay until then. The legacy TCP classes carry the
+`_legacy` suffix because the rewritten ones needed their names.
 
-When wiring transports into the blocks, note that **TCP packet framing currently
-lives in the source block**, at `difi_source_cpp_impl.cc` in `buffer_and_send`:
-it reads a 4-byte word, decodes the packet size from header bits 0-15, then reads
-the remainder. That belongs inside the TCP transport's `recv`, so the block stops
-knowing which protocol it is on.
+**TCP framing now exists in two places, on purpose.** TCP delivers a stream and
+does not keep packet boundaries, so somebody has to read the size from the DIFI
+header and cut the stream into packets. The legacy path still does this inside
+the source block, at `difi_source_cpp_impl.cc` in `buffer_and_send`. The new
+`tcp_server::recv` does the same thing internally and returns exactly one packet,
+so a block using it does not need to know which protocol it is on. Delete the
+copy in `buffer_and_send` when the source block is wired to the new transport.
 
 ## Traps
 
