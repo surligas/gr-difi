@@ -197,3 +197,11 @@ transport change; do re-check it if you touch packing or unpacking.
 
 Strict atomic commits: one logical change per commit, no unrelated edits mixed
 in. Finish a unit of work, then commit it before starting the next.
+
+## Documentation
+
+The documentation within the code (comments, block of comments, etc) as well as
+documentation for the end user (doxygen, sphinx, etc) should follow a strict,
+direct, clear and understandable language even from non-native English users.
+Avoid over-complicated phrases, slang or phrases that do not make any sense.
+If necessary, ask for user guidance and feedback interactively.
