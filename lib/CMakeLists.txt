@@ -23,6 +23,8 @@ list(APPEND difi_sources
     transport.hpp
     udp_server.hpp
     udp_server.cpp
+    udp_client.hpp
+    udp_client.cpp
 )
 
 set(difi_sources "${difi_sources}" PARENT_SCOPE)
@@ -67,6 +69,7 @@ include(GrTest)
 # List all files that contain Boost.UTF unit tests here
 list(APPEND test_difi_sources
     qa_udp_server.cc
+    qa_udp_client.cc
 )
 # Anything we need to link to for the unit tests go here
 list(APPEND GR_TEST_TARGET_DEPS gnuradio-difi)

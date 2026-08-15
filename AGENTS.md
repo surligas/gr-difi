@@ -127,7 +127,7 @@ One class per role, so protocol choice collapses to a single decision at block
 construction and the runtime path has no per-packet branching:
 
 - `udp_server` — **done**, bound endpoint, replies to the last peer heard from
-- `udp_client` — not started
+- `udp_client` — **done**, connected to a fixed remote endpoint (used by the sink)
 - `tcp_server` — not started (replaces `lib/tcp_server.*`, used by the source)
 - `tcp_client` — not started (replaces `lib/tcp_client.*`, used by the sink)
 
@@ -154,6 +154,14 @@ the magic number means migrating every consumer below.
 always binds `INADDR_ANY` when acting as a server, so existing flowgraphs set
 that field to the *sender's* address. `udp_server(port)` preserves this;
 `udp_server(ip_addr, port)` binds the given interface and would break them.
+
+**`udp_client` ignores `ECONNREFUSED` when sending.** Its socket is connected, so
+when no socket listens on the remote port, the kernel reports the resulting ICMP
+port unreachable message as an error on the *next* `send`, not on the one that
+caused it. The earlier datagram was still transmitted, and the receiver may be
+started at any time, so `send()` returns normally in this case instead of
+throwing. Every other error still throws. `recv()` reports the same condition as
+`-ECONNREFUSED` and lets the caller decide.
 
 **The bindings are hand-written, and nothing catches them drifting.**
 `bind_oot_file.py` is present but was not used for the current files: each one
