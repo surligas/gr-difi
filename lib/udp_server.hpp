@@ -40,10 +40,6 @@ public:
   ssize_t recv(void *buf, size_t len) override;
 
 private:
-  /* Caps how long recv() blocks, so that a caller polling this transport can
-   * still react to a shutdown request when no traffic arrives. */
-  static constexpr long RECV_TIMEOUT_US = 100000;
-
   void bind_socket(in_addr_t addr, uint16_t port);
 
   int m_socket;

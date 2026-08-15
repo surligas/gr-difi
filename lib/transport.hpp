@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include <difi/api.h>
+#include <string>
 #include <sys/types.h>
 
 namespace gr::difi {
@@ -59,6 +60,42 @@ public:
   virtual ssize_t recv(void *buf, size_t len) = 0;
 
 protected:
+  /* Caps how long a receive call blocks, so that a caller polling a transport
+   * can still react to a shutdown request when no traffic arrives. */
+  static constexpr long RECV_TIMEOUT_US = 100000;
+
+  /**
+   * @brief Adds the reason reported by the operating system to a failure
+   * description.
+   *
+   * @param what description of the operation that failed
+   * @return the description followed by the current errno string
+   */
+  static std::string errno_msg(const std::string &what);
+
+  /**
+   * @brief Sets the buffer sizes and the receive timeout on an open socket.
+   *
+   * Call this on a socket that was accepted from a listening socket, because
+   * such a socket does not inherit these options. A socket opened with
+   * create_socket() is already configured.
+   *
+   * @param fd the socket to configure
+   */
+  void apply_socket_options(int fd) const;
+
+  /**
+   * @brief Opens a socket and configures it with apply_socket_options().
+   *
+   * The socket is closed again if the configuration fails, so the caller never
+   * receives a socket in a partial state.
+   *
+   * @param type the socket type, for example SOCK_DGRAM or SOCK_STREAM
+   * @param protocol the protocol, for example IPPROTO_UDP or IPPROTO_TCP
+   * @return the open socket
+   */
+  int create_socket(int type, int protocol) const;
+
   const size_t m_recv_buffer_size;
   const size_t m_send_buffer_size;
 };

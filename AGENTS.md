@@ -119,9 +119,20 @@ virtual void send(const void *data, size_t len) = 0;      // throws on failure
 virtual ssize_t recv(void *buf, size_t len) = 0;          // negated errno on failure
 ```
 
-It also holds `m_recv_buffer_size` / `m_send_buffer_size` as protected consts,
-defaulting to `DEFAULT_BUFFER_SIZE` (2 MB), for derived classes to apply via
-`setsockopt`.
+It also provides the socket setup that every transport needs, so a derived class
+only has to add what makes it different:
+
+| member | purpose |
+| --- | --- |
+| `create_socket(type, protocol)` | opens a socket and configures it, closing it again if the configuration fails |
+| `apply_socket_options(fd)` | sets the buffer sizes and the receive timeout. Call it on a socket returned by `accept()`, which does not inherit them |
+| `errno_msg(what)` | formats a failure as `"<what>: <strerror(errno)>"` |
+| `RECV_TIMEOUT_US` | 100 ms, so a blocking `recv` still returns often enough to notice shutdown |
+| `m_recv_buffer_size` / `m_send_buffer_size` | protected consts, default `DEFAULT_BUFFER_SIZE` (2 MB) |
+
+A derived class calls `create_socket()`, then does its own `bind()`, `connect()`
+or `listen()`, and closes the socket by hand if that step throws. The object is
+not fully constructed at that point, so its destructor will not run.
 
 One class per role, so protocol choice collapses to a single decision at block
 construction and the runtime path has no per-packet branching:
@@ -186,8 +197,12 @@ transport classes `DIFI_API`. Verify with `nm -DC build/lib/libgnuradio-difi.so`
 
 **Adding a C++ test suite** means appending the file to `test_difi_sources` in
 `lib/CMakeLists.txt`; `GR_ADD_CPP_TEST` handles Boost.Test wiring from there.
-Bind to a port from the `free_port()` helper rather than a literal, mirroring
-`get_open_ports()` in the Python QA.
+Include `lib/qa_transport_utils.hpp` for the shared helpers instead of copying
+them: `free_port()` (always use it rather than a literal port, mirroring
+`get_open_ports()` in the Python QA), `peer` for the socket on the other end,
+`fd_opened_by()` to reach the private socket of a transport, and `sock_opt()` /
+`local_port()` to inspect it. Each suite is a separate binary, which is why the
+helpers are inline in a header rather than a library.
 
 **A single-argument constructor inside a Boost check macro is a vexing parse.**
 `BOOST_CHECK_THROW(udp_server(port), ...)` declares a variable; write

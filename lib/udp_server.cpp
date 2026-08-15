@@ -12,23 +12,11 @@
 #include <cerrno>
 #include <cstring>
 #include <stdexcept>
+#include <string>
 #include <sys/socket.h>
-#include <sys/time.h>
 #include <unistd.h>
 
 namespace gr::difi {
-
-namespace {
-/**
- * @brief Annotates a failure with the reason reported by the operating system.
- *
- * @param what description of the operation that failed
- * @return the description followed by the current errno string
- */
-std::string errno_msg(const std::string &what) {
-  return what + ": " + std::strerror(errno);
-}
-} // namespace
 
 /**
  * @brief Creates a UDP server that listens on the specified IP address and
@@ -79,35 +67,11 @@ void udp_server::bind_socket(in_addr_t addr, uint16_t port) {
   std::memset(&m_peer, 0, sizeof(m_peer));
   m_peer_len = 0;
 
-  m_socket = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-  if (m_socket < 0) {
-    throw std::runtime_error(errno_msg("Could not create the UDP socket"));
-  }
+  m_socket = create_socket(SOCK_DGRAM, IPPROTO_UDP);
 
   /* The object is not fully constructed until this returns, so its destructor
    * will not run and the socket has to be released by hand on failure. */
   try {
-    const int recv_buf_size = static_cast<int>(m_recv_buffer_size);
-    if (::setsockopt(m_socket, SOL_SOCKET, SO_RCVBUF, &recv_buf_size,
-                     sizeof(recv_buf_size)) < 0) {
-      throw std::runtime_error(
-          errno_msg("Could not set the socket receive buffer size"));
-    }
-
-    const int send_buf_size = static_cast<int>(m_send_buffer_size);
-    if (::setsockopt(m_socket, SOL_SOCKET, SO_SNDBUF, &send_buf_size,
-                     sizeof(send_buf_size)) < 0) {
-      throw std::runtime_error(
-          errno_msg("Could not set the socket send buffer size"));
-    }
-
-    struct timeval tv = {};
-    tv.tv_usec = RECV_TIMEOUT_US;
-    if (::setsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
-      throw std::runtime_error(
-          errno_msg("Could not set the socket receive timeout"));
-    }
-
     struct sockaddr_in local = {};
     local.sin_family = AF_INET;
     local.sin_port = htons(port);
