@@ -16,7 +16,7 @@
 namespace gr {
   namespace difi {
 
-  class tcp_client;
+  class tcp_client_legacy;
   class udp_socket;
 
     template <class T>
@@ -84,7 +84,7 @@ namespace gr {
         float d_max_iq;
         float d_min_iq;
 
-        tcp_client* p_tcpsocket;
+        tcp_client_legacy* p_tcpsocket;
         udp_socket* p_udpsocket;
 
      public:

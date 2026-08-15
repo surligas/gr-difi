@@ -14,10 +14,10 @@ include(GrPlatform) #define LIB_SUFFIX
 list(APPEND difi_sources
     difi_source_cpp_impl.cc
     difi_sink_cpp_impl.cc
-    tcp_server.h
-    tcp_server.cc
-    tcp_client.h
-    tcp_client.cc
+    tcp_server_legacy.h
+    tcp_server_legacy.cc
+    tcp_client_legacy.h
+    tcp_client_legacy.cc
     udp_socket.h
     udp_socket.cc
     transport.hpp

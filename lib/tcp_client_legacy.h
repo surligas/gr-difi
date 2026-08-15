@@ -3,8 +3,8 @@
 // Licensed under the GNU General Public License v3.0 or later.
 // See License.txt in the project root for license information.
 
-#ifndef INCLUDED_TCP_CLIENT_H
-#define INCLUDED_TCP_CLIENT_H
+#ifndef INCLUDED_TCP_CLIENT_LEGACY_H
+#define INCLUDED_TCP_CLIENT_LEGACY_H
 
 #include <string>
 #include <netinet/in.h>
@@ -13,12 +13,12 @@
 namespace gr {
 namespace difi {
 
-class tcp_client
+class tcp_client_legacy
 {
     public:
 
-        tcp_client(std::string ip_addr, uint32_t port);
-        ~tcp_client();
+        tcp_client_legacy(std::string ip_addr, uint32_t port);
+        ~tcp_client_legacy();
 
         bool connect();
         bool is_connected();
@@ -35,4 +35,4 @@ class tcp_client
 } // namespace difi
 } // namespace gr
 
-#endif /* INCLUDED_TCP_CLIENT_H */
+#endif /* INCLUDED_TCP_CLIENT_LEGACY_H */

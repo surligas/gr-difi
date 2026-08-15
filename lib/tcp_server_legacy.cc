@@ -14,7 +14,7 @@
 #include <iostream>
 #include <cstring>
 
-#include "tcp_server.h"
+#include "tcp_server_legacy.h"
 
 #define INVALID_SOCKET (-1)
 
@@ -22,7 +22,7 @@
 namespace gr {
   namespace difi {
 
-      tcp_server::tcp_server(std::string ip_addr, uint32_t port):
+      tcp_server_legacy::tcp_server_legacy(std::string ip_addr, uint32_t port):
         d_listener(INVALID_SOCKET),
         d_client(INVALID_SOCKET)
       {
@@ -65,7 +65,7 @@ namespace gr {
         }
       }
 
-      tcp_server::~tcp_server()
+      tcp_server_legacy::~tcp_server_legacy()
       {
         if(d_client != INVALID_SOCKET)
         {
@@ -80,7 +80,7 @@ namespace gr {
         }
       }
 
-      bool tcp_server::is_client_connected()
+      bool tcp_server_legacy::is_client_connected()
       {
         if(d_client != INVALID_SOCKET)
           return true;
@@ -90,7 +90,7 @@ namespace gr {
         return d_client != INVALID_SOCKET;
       }
 
-      int tcp_server::read(int8_t* buf, int len)
+      int tcp_server_legacy::read(int8_t* buf, int len)
       {
         int total_bytes_read = 0;
         int remaining_bytes = len;
@@ -112,7 +112,7 @@ namespace gr {
         return total_bytes_read;
       }
 
-      void tcp_server::check_for_incoming_conn(int timeout_in_ms)
+      void tcp_server_legacy::check_for_incoming_conn(int timeout_in_ms)
       {
         struct pollfd pollfd;
 
@@ -140,7 +140,7 @@ namespace gr {
         }
       }
 
-      bool tcp_server::is_data_available(int timeout_in_ms)
+      bool tcp_server_legacy::is_data_available(int timeout_in_ms)
       {
         struct pollfd pollfd;
 
@@ -167,7 +167,7 @@ namespace gr {
         return false;
       }
 
-      void tcp_server::reset_client_conn()
+      void tcp_server_legacy::reset_client_conn()
       {
         std::wcerr << "Client connection has been closed." << std::endl;
         shutdown(d_client, SHUT_RDWR);
@@ -175,7 +175,7 @@ namespace gr {
         d_client = INVALID_SOCKET;
       }
 
-      int tcp_server::num_bytes_available()
+      int tcp_server_legacy::num_bytes_available()
       {
         if(d_client == INVALID_SOCKET)
           return -1;

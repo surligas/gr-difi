@@ -6,7 +6,7 @@
 #include <gnuradio/io_signature.h>
 #include "difi_sink_cpp_impl.h"
 
-#include "tcp_client.h"
+#include "tcp_client_legacy.h"
 #include "udp_socket.h"
 
 namespace gr {
@@ -54,7 +54,7 @@ namespace gr {
       }
       else
       {
-        p_tcpsocket = new tcp_client(ip_addr,port);
+        p_tcpsocket = new tcp_client_legacy(ip_addr,port);
       }
 
       if (samples_per_packet < 2)

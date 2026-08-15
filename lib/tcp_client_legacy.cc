@@ -15,7 +15,7 @@
 #include <iostream>
 #include <cstring>
 
-#include "tcp_client.h"
+#include "tcp_client_legacy.h"
 
 #define INVALID_SOCKET (-1)
 
@@ -23,7 +23,7 @@
 namespace gr {
   namespace difi {
 
-      tcp_client::tcp_client(std::string ip_addr, uint32_t port):
+      tcp_client_legacy::tcp_client_legacy(std::string ip_addr, uint32_t port):
         d_socket(INVALID_SOCKET)
       {
         memset(&d_servaddr, 0, sizeof(d_servaddr));
@@ -34,13 +34,13 @@ namespace gr {
         create_socket();
       }
 
-      tcp_client::~tcp_client()
+      tcp_client_legacy::~tcp_client_legacy()
       {
           shutdown(d_socket, SHUT_RDWR);
           close(d_socket);
       }
 
-      void tcp_client::create_socket()
+      void tcp_client_legacy::create_socket()
       {
         if ((d_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
         {
@@ -56,13 +56,13 @@ namespace gr {
         }
       }
 
-      bool tcp_client::connect()
+      bool tcp_client_legacy::connect()
       {
           int res = ::connect(d_socket, (struct sockaddr*)&d_servaddr, sizeof(d_servaddr));
           return (res == 0)? true:false;
       }
 
-      bool tcp_client::is_connected()
+      bool tcp_client_legacy::is_connected()
       {
         // check connection has been established by getting the peer information
         socklen_t addr_len = sizeof(d_servaddr);
@@ -110,7 +110,7 @@ namespace gr {
         return true;
       }
 
-      int tcp_client::send(int8_t* buf, int len)
+      int tcp_client_legacy::send(int8_t* buf, int len)
       {
         int num_bytes_sent = ::send(d_socket, buf, len, 0);
 

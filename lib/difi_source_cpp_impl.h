@@ -22,7 +22,7 @@
 namespace gr {
 namespace difi {
 
-class tcp_server;
+class tcp_server_legacy;
 class udp_socket;
 template <class T>
 class difi_source_cpp_impl : public difi_source_cpp<T>
@@ -117,7 +117,7 @@ private:
     pmt::pmt_t d_context;
     std::vector<int8_t> d_packet_buffer;
     std::deque<char> d_deque;
-    tcp_server* p_tcpserver;
+    tcp_server_legacy* p_tcpserver;
     udp_socket* p_udpsocket;
 
 public:

@@ -3,8 +3,8 @@
 // Licensed under the GNU General Public License v3.0 or later.
 // See License.txt in the project root for license information.
 
-#ifndef INCLUDED_TCP_SERVER_H
-#define INCLUDED_TCP_SERVER_H
+#ifndef INCLUDED_TCP_SERVER_LEGACY_H
+#define INCLUDED_TCP_SERVER_LEGACY_H
 
 #include <string>
 #include <netinet/in.h>
@@ -13,12 +13,12 @@
 namespace gr {
 namespace difi {
 
-class tcp_server
+class tcp_server_legacy
 {
     public:
 
-        tcp_server(std::string ip_addr, uint32_t port);
-        ~tcp_server();
+        tcp_server_legacy(std::string ip_addr, uint32_t port);
+        ~tcp_server_legacy();
 
         bool is_client_connected();
         int read(int8_t* buf, int len);
@@ -41,4 +41,4 @@ class tcp_server
 } // namespace difi
 } // namespace gr
 
-#endif /* INCLUDED_TCP_SERVER_H */
+#endif /* INCLUDED_TCP_SERVER_LEGACY_H */

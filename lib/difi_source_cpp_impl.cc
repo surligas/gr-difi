@@ -10,7 +10,7 @@
 #include <stdlib.h>
 
 #include "difi_source_cpp_impl.h"
-#include "tcp_server.h"
+#include "tcp_server_legacy.h"
 #include "udp_socket.h"
 
 #define NUM_BYTES_PER_WORD (4)
@@ -71,7 +71,7 @@ namespace gr {
 
       if(socket_type == SOCK_STREAM)
       {
-        p_tcpserver = new tcp_server(ip_addr,port);
+        p_tcpserver = new tcp_server_legacy(ip_addr,port);
       }
       else
       {
