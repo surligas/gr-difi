@@ -10,6 +10,7 @@
 
 #include <arpa/inet.h>
 #include <boost/test/unit_test.hpp>
+#include <cstring>
 #include <dirent.h>
 #include <set>
 #include <stdexcept>
@@ -178,6 +179,89 @@ private:
     sockaddr_in m_last = {};
     socklen_t m_last_len = 0;
 };
+
+/*!
+ * \brief A plain TCP socket standing in for the peer on the other end of a
+ * stream transport.
+ *
+ * Connecting is a separate step from construction, so that a test can observe
+ * how the transport behaves before any peer arrives.
+ */
+class tcp_peer
+{
+public:
+    tcp_peer() : m_socket(::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP))
+    {
+        BOOST_REQUIRE(m_socket >= 0);
+
+        timeval tv = {};
+        tv.tv_sec = 2;
+        ::setsockopt(m_socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    }
+
+    ~tcp_peer() { close(); }
+
+    tcp_peer(const tcp_peer &) = delete;
+    tcp_peer &operator=(const tcp_peer &) = delete;
+
+    void connect_to(uint16_t port)
+    {
+        sockaddr_in dst = {};
+        dst.sin_family = AF_INET;
+        dst.sin_port = htons(port);
+        ::inet_pton(AF_INET, LOOPBACK, &dst.sin_addr);
+        BOOST_REQUIRE(::connect(m_socket, (const sockaddr *)&dst, sizeof(dst)) == 0);
+    }
+
+    void send(const std::string &payload)
+    {
+        size_t total = 0;
+        while (total < payload.size()) {
+            ssize_t n = ::send(
+                m_socket, payload.data() + total, payload.size() - total, MSG_NOSIGNAL);
+            BOOST_REQUIRE(n > 0);
+            total += n;
+        }
+    }
+
+    /*! \brief Reads up to \p len bytes, returning what arrived before the timeout. */
+    std::string recv(size_t len)
+    {
+        std::string buf(len, '\0');
+        ssize_t n = ::recv(m_socket, buf.data(), len, 0);
+        return n < 0 ? std::string() : buf.substr(0, n);
+    }
+
+    /*! \brief Closes the connection, which the other end sees as end of stream. */
+    void close()
+    {
+        if (m_socket >= 0) {
+            ::close(m_socket);
+            m_socket = -1;
+        }
+    }
+
+private:
+    int m_socket;
+};
+
+/*!
+ * \brief Builds a DIFI packet of \p size bytes with a valid header.
+ *
+ * Bits 0 to 15 of the first word hold the size of the packet counted in 32 bit
+ * words, which is what a stream transport reads to find the packet boundary.
+ * The payload is filled with \p filler so that a test can tell packets apart.
+ */
+inline std::string difi_packet(size_t size, char filler = 'x')
+{
+    BOOST_REQUIRE(size >= 4);
+    BOOST_REQUIRE(size % 4 == 0);
+
+    std::string packet(size, filler);
+    uint32_t header = htonl(static_cast<uint32_t>(size / 4));
+    std::memcpy(packet.data(), &header, sizeof(header));
+    return packet;
+}
 
 /*! \brief Reads a socket level option, for example SO_RCVBUF. */
 inline int sock_opt(int fd, int optname)

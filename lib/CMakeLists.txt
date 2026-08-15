@@ -26,6 +26,8 @@ list(APPEND difi_sources
     udp_server.cpp
     udp_client.hpp
     udp_client.cpp
+    tcp_server.hpp
+    tcp_server.cpp
 )
 
 set(difi_sources "${difi_sources}" PARENT_SCOPE)
@@ -71,6 +73,7 @@ include(GrTest)
 list(APPEND test_difi_sources
     qa_udp_server.cc
     qa_udp_client.cc
+    qa_tcp_server.cc
 )
 # Anything we need to link to for the unit tests go here
 list(APPEND GR_TEST_TARGET_DEPS gnuradio-difi)
