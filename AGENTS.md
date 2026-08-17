@@ -140,20 +140,32 @@ construction and the runtime path has no per-packet branching:
 - `udp_server` — **done**, bound endpoint, replies to the last peer heard from
 - `udp_client` — **done**, connected to a fixed remote endpoint (used by the sink)
 - `tcp_server` — **done**, serves one peer at a time (used by the source)
-- `tcp_client` — not started (replaces `lib/tcp_client_legacy.*`, used by the sink)
+- `tcp_client` — **done**, connects on demand and reconnects (used by the sink)
 
-Until all four exist, `difi_source_cpp_impl` and `difi_sink_cpp_impl` still use
-the legacy classes; `lib/udp_socket.*`, `lib/tcp_server_legacy.*` and
-`lib/tcp_client_legacy.*` stay until then. The legacy TCP classes carry the
-`_legacy` suffix because the rewritten ones needed their names.
+The two TCP classes share `tcp_transport`, which holds the framing, the send
+loop and the connection handling. A derived class implements one method,
+`ensure_connected()`: the server accepts a waiting peer, the client reaches out
+to its endpoint. `tcp_client` connects when first used rather than in its
+constructor, and connects again after a connection is lost, because the peer of
+a sink is often started later than the flowgraph.
+
+**All four now exist, so the next step is wiring the blocks.** Until that
+happens `difi_source_cpp_impl` and `difi_sink_cpp_impl` still use the legacy
+classes, and `lib/udp_socket.*`, `lib/tcp_server_legacy.*` and
+`lib/tcp_client_legacy.*` stay with them. The legacy TCP classes carry the
+`_legacy` suffix because the rewritten ones needed their names; delete all of
+them once nothing includes them. Note that the Python QA covers the TCP path
+with 37 `SOCK_STREAM` cases, and two saved flowgraphs use `protocol: '1'`, so
+that suite has to run before the wiring can be trusted.
 
 **TCP framing now exists in two places, on purpose.** TCP delivers a stream and
 does not keep packet boundaries, so somebody has to read the size from the DIFI
 header and cut the stream into packets. The legacy path still does this inside
-the source block, at `difi_source_cpp_impl.cc` in `buffer_and_send`. The new
-`tcp_server::recv` does the same thing internally and returns exactly one packet,
-so a block using it does not need to know which protocol it is on. Delete the
-copy in `buffer_and_send` when the source block is wired to the new transport.
+the source block, at `difi_source_cpp_impl.cc` in `buffer_and_send`.
+`tcp_transport::recv` does the same thing internally and returns exactly one
+packet, so a block using it does not need to know which protocol it is on.
+Delete the copy in `buffer_and_send` when the source block is wired to the new
+transport.
 
 ## Traps
 

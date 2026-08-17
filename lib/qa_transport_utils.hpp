@@ -12,6 +12,7 @@
 #include <boost/test/unit_test.hpp>
 #include <cstring>
 #include <dirent.h>
+#include <poll.h>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -243,6 +244,99 @@ public:
 
 private:
     int m_socket;
+};
+
+/*!
+ * \brief A listening TCP socket standing in for the peer a client connects to.
+ *
+ * Accepting is a separate step, so that a test can control the moment the
+ * connection is established.
+ */
+class tcp_listener
+{
+public:
+    explicit tcp_listener(uint16_t port)
+        : m_listener(::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP))
+    {
+        BOOST_REQUIRE(m_listener >= 0);
+
+        // Needed so that a test can bind the same port again after closing a
+        // previous listener, while the old socket is still in TIME_WAIT.
+        const int enable = 1;
+        ::setsockopt(m_listener, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(enable));
+
+        sockaddr_in local = {};
+        local.sin_family = AF_INET;
+        local.sin_port = htons(port);
+        ::inet_pton(AF_INET, LOOPBACK, &local.sin_addr);
+        BOOST_REQUIRE(::bind(m_listener, (const sockaddr *)&local, sizeof(local)) == 0);
+        BOOST_REQUIRE(::listen(m_listener, 1) == 0);
+    }
+
+    ~tcp_listener()
+    {
+        close_peer();
+        if (m_listener >= 0) {
+            ::close(m_listener);
+        }
+    }
+
+    tcp_listener(const tcp_listener &) = delete;
+    tcp_listener &operator=(const tcp_listener &) = delete;
+
+    /*! \brief Waits for a client to connect and accepts it. */
+    bool accept_peer(int timeout_ms = 2000)
+    {
+        pollfd pfd = {};
+        pfd.fd = m_listener;
+        pfd.events = POLLIN;
+        if (::poll(&pfd, 1, timeout_ms) <= 0) {
+            return false;
+        }
+
+        m_peer = ::accept(m_listener, nullptr, nullptr);
+        if (m_peer < 0) {
+            return false;
+        }
+
+        timeval tv = {};
+        tv.tv_sec = 2;
+        ::setsockopt(m_peer, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        return true;
+    }
+
+    void send(const std::string &payload)
+    {
+        BOOST_REQUIRE(m_peer >= 0);
+        size_t total = 0;
+        while (total < payload.size()) {
+            ssize_t n = ::send(
+                m_peer, payload.data() + total, payload.size() - total, MSG_NOSIGNAL);
+            BOOST_REQUIRE(n > 0);
+            total += n;
+        }
+    }
+
+    std::string recv(size_t len)
+    {
+        BOOST_REQUIRE(m_peer >= 0);
+        std::string buf(len, '\0');
+        ssize_t n = ::recv(m_peer, buf.data(), len, 0);
+        return n < 0 ? std::string() : buf.substr(0, n);
+    }
+
+    /*! \brief Drops the accepted connection, keeping the port listening. */
+    void close_peer()
+    {
+        if (m_peer >= 0) {
+            ::close(m_peer);
+            m_peer = -1;
+        }
+    }
+
+private:
+    int m_listener;
+    int m_peer = -1;
 };
 
 /*!
