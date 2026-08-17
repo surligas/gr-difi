@@ -26,6 +26,8 @@ list(APPEND difi_sources
     udp_server.cpp
     udp_client.hpp
     udp_client.cpp
+    tcp_transport.hpp
+    tcp_transport.cpp
     tcp_server.hpp
     tcp_server.cpp
 )
