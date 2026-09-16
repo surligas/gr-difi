@@ -1,0 +1,3 @@
+[submodule "test/DIFI-Certification"]
+	path = test/DIFI-Certification
+	url = https://github.com/DIFI-Consortium/DIFI-Certification.git
