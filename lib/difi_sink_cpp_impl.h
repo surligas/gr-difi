@@ -9,7 +9,7 @@
 #define INCLUDED_DIFI_SINK_CPP_IMPL_H
 
 #include <difi/difi_sink_cpp.h>
-#include <difi/difi_common.h>
+#include <difi/difi.hpp>
 
 
 

@@ -32,6 +32,7 @@ list(APPEND difi_sources
     tcp_server.cpp
     tcp_client.hpp
     tcp_client.cpp
+    difi.cpp
 )
 
 set(difi_sources "${difi_sources}" PARENT_SCOPE)
@@ -41,7 +42,7 @@ if(NOT difi_sources)
 endif(NOT difi_sources)
 
 add_library(gnuradio-difi SHARED ${difi_sources})
-target_link_libraries(gnuradio-difi gnuradio::gnuradio-runtime)
+target_link_libraries(gnuradio-difi gnuradio::gnuradio-runtime Volk::volk)
 target_include_directories(gnuradio-difi
     PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
     PUBLIC $<INSTALL_INTERFACE:include>
@@ -79,6 +80,7 @@ list(APPEND test_difi_sources
     qa_udp_client.cc
     qa_tcp_server.cc
     qa_tcp_client.cc
+    qa_difi.cc
 )
 # Anything we need to link to for the unit tests go here
 list(APPEND GR_TEST_TARGET_DEPS gnuradio-difi)
