@@ -38,7 +38,7 @@ predates the C++20 requirement. Run the tests locally.
 
 | Path | Contents |
 | --- | --- |
-| `include/difi/` | Installed public headers. `difi_common.h` holds the wire-format offsets and constants. |
+| `include/difi/` | Installed public headers. `difi.hpp` defines `class difi`, nested enums/structs, and wire-format constants. |
 | `lib/` | Block implementations and transports. Headers here are **not** installed. |
 | `grc/*.block.yml` | GRC block definitions. Parameter values are part of the public contract. |
 | `python/bindings/` | pybind11 glue. Hand-maintained despite `bind_oot_file.py` sitting next to it — see the traps. |
@@ -55,16 +55,35 @@ picks the `d_unpacker` function pointer in the constructor. Getting the pair
 wrong is a warning ("not divisible by the number bytes per sample"), not an
 error, so it shows up as garbage samples.
 
-**The wire format is offset tables, not structs.** `difi_common.h` holds a
-28-byte header size, the mod-16 packet counter, and two offset tables:
-`CONTEXT_PACKET_OFFSETS` (16 entries, standard layout) and
-`CONTEXT_PACKET_ALT_OFFSETS` (9 entries, a workaround for a non-compliant
-device, selected by `context_pack_size == 72`). The sink packer and the source's
-`unpack_context_alt` both branch on that 72; a change to one table has to be
-mirrored on the other side. Header fields come out by shifting: type is bits
-31-28 (`type == 1` is data, anything else is treated as context), packet count
-bits 19-16, size in 32-bit words bits 15-0, and bits 31-20 are the "static part"
-whose change emits a tag.
+**The protocol engine is `class difi`.** `difi.hpp` consolidates wire-format
+constants, header operations, context parsing, timestamp arithmetic, SIMD sample
+conversion, and PMT tag generation. Wire constants are `static constexpr`
+members of `class difi` (with backwards-compatible aliases for legacy blocks,
+e.g. `difi::CONTEXT_PACKET_OFFSETS`, `difi::CONTEXT_PACKET_ALT_OFFSETS`,
+`difi::DIFI_HEADER_SIZE`, `difi::DATA_START_IDX`, `difi::VITA_PKT_MOD`).
+
+Enums and structs are nested inside `class difi` (with namespace-level `using`
+aliases for backwards compatibility):
+- `difi::packet_type`: `data = 1`, `context = 4`, `version = 5` (DIFI 1.1 / 1.2.1), `unknown = 0`.
+- `difi::bit_depth`: `bits_8 = 8`, `bits_16 = 16`.
+- `difi::context_version`: `standard`, `alternative`.
+- `difi::context_behavior`: `throw_exe`, `ignore`, `warnings_forward`, `warnings_no_forward`.
+- `difi::header`: 28-byte header representation (alias `difi_header`).
+
+**Context packets are templated by version:**
+`template <context_version V = context_version::standard> struct context;`
+- `context<context_version::standard>` (`standard_context`, `difi_context`):
+  represents the 108-byte standard context packet with 16 engineering fields.
+- `context<context_version::alternative>` (`alternative_context`):
+  represents the 72-byte alternative context packet with 9 fields.
+- `difi::parse_context<V>(buf, len)` / `difi::parse_context<V>(span)`: compile-time version selection.
+- `difi::parse_context(buf, len)` / `difi::parse_context(span)`: runtime dispatch returning `std::variant<standard_context, alternative_context>`.
+- `difi::pack_context(ctx, ...)`: overloads for typed contexts and variants.
+
+Header fields come out by shifting: type is bits 31-28 (`type == 1` is data,
+`type == 4` is context, `type == 5` is version context), packet count bits
+19-16, size in 32-bit words bits 15-0, and bits 31-20 are the "static part" whose
+change emits a tag.
 
 **Tags are the source→sink contract.** Everything the sink needs in paired mode
 arrives as stream tags, not through a signature. The source emits three keys and
