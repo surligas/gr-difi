@@ -85,7 +85,12 @@ difi::header difi::parse_header(const void* buf, size_t len)
     if (type_val == static_cast<uint8_t>(packet_type::data)) {
         h.type = packet_type::data;
     } else if (type_val == static_cast<uint8_t>(packet_type::context)) {
-        h.type = packet_type::context;
+        // In DIFI v1.2.1, version flow packets use context pktType 0x4 with packetClassCode 0x0004
+        if ((cid & 0xffff) == 0x0004) {
+            h.type = packet_type::version;
+        } else {
+            h.type = packet_type::context;
+        }
     } else if (type_val == static_cast<uint8_t>(packet_type::version)) {
         h.type = packet_type::version;
     } else {
