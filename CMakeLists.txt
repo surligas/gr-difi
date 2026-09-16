@@ -160,6 +160,7 @@ add_custom_target(uninstall
 add_subdirectory(include/difi)
 add_subdirectory(lib)
 add_subdirectory(docs)
+add_subdirectory(test)
 # NOTE: manually update below to use GRC to generate C++ flowgraphs w/o python
 if(ENABLE_PYTHON)
   message(STATUS "PYTHON and GRC components are enabled")

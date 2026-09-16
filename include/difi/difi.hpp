@@ -124,8 +124,8 @@ public:
                                                                             52, 60, 64 };
     static constexpr uint32_t DATA_START_IDX = 28;
     static constexpr uint64_t DEFAULT_STATE_AND_EVENTS = 2685009920ULL;
-    static constexpr uint64_t EIGHT_BIT_SIGNED_CART_LINK_EFF = 0xa00003c700000000ULL;
-    static constexpr uint64_t SIXTEEN_BIT_SIGNED_CART_LINK_EFF = 0xa00007cf00000000ULL;
+    static constexpr uint64_t EIGHT_BIT_SIGNED_CART_LINK_EFF = 0xa00001c700000000ULL;
+    static constexpr uint64_t SIXTEEN_BIT_SIGNED_CART_LINK_EFF = 0xa00003cf00000000ULL;
     static constexpr uint64_t STANDARD_OUI = 0x6a621e;
     static constexpr uint64_t ALT_OUI = 0x7c386c;
     static constexpr size_t STANDARD_CONTEXT_PACKET_SIZE = STANDARD_CONTEXT_SIZE;

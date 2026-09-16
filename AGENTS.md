@@ -18,6 +18,7 @@ cmake .. && make -j $(nproc)
 ```bash
 ctest                                             # everything
 ctest -R difi_qa_udp_server --output-on-failure   # one C++ suite
+ctest -R difi_qa_certification -V                 # DIFI compliance certification suite
 cd ../python && python -m pytest qa_*             # Python only
 python -m pytest qa_difi_blocks_cpp.py -k test_multi_packet_correct   # one test
 ```
@@ -40,6 +41,7 @@ predates the C++20 requirement. Run the tests locally.
 | --- | --- |
 | `include/difi/` | Installed public headers. `difi.hpp` defines `class difi`, nested enums/structs, and wire-format constants. |
 | `lib/` | Block implementations and transports. Headers here are **not** installed. |
+| `test/` | Certification test tools (`difi_cert_tx`, `difi_cert_rx`), runner (`run_difi_certification.py`), and `DIFI-Certification` submodule. |
 | `grc/*.block.yml` | GRC block definitions. Parameter values are part of the public contract. |
 | `python/bindings/` | pybind11 glue. Hand-maintained despite `bind_oot_file.py` sitting next to it — see the traps. |
 | `python/qa_difi_blocks_cpp.py` | Python QA, end-to-end through real sockets. |
