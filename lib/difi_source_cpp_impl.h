@@ -16,7 +16,7 @@
 #include <arpa/inet.h>
 
 
-#include <difi/difi_common.h>
+#include <difi/difi.hpp>
 #include <difi/difi_source_cpp.h>
 
 namespace gr {
