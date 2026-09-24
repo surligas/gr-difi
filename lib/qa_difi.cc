@@ -289,6 +289,89 @@ BOOST_AUTO_TEST_CASE(t_sample_packing_and_unpacking_8bit)
     }
 }
 
+BOOST_AUTO_TEST_CASE(t_sample_packing_scaling_and_offset)
+{
+    const size_t N = 32;
+    std::vector<gr_complex> samples_in(N);
+    for (size_t i = 0; i < N; ++i) {
+        samples_in[i] =
+            gr_complex(static_cast<float>(i), static_cast<float>(-static_cast<int>(i)));
+    }
+
+    float gain = 2.0f;
+    gr_complex offset(10.0f, -5.0f);
+
+    // 16-bit depth with scaling
+    std::vector<uint8_t> payload16(N * 4);
+    difi::pack_samples(samples_in.data(), N, payload16.data(), 16, 1, gain, offset);
+
+    std::vector<gr_complex> samples_out16(N);
+    size_t unpacked16 = difi::unpack_samples(
+        payload16.data(), payload16.size(), samples_out16.data(), N, 16);
+    BOOST_CHECK_EQUAL(unpacked16, N);
+
+    for (size_t i = 0; i < N; ++i) {
+        float expected_re = (samples_in[i].real() + offset.real()) * gain;
+        float expected_im = (samples_in[i].imag() + offset.imag()) * gain;
+        BOOST_CHECK_CLOSE(samples_out16[i].real(), expected_re, 0.01);
+        BOOST_CHECK_CLOSE(samples_out16[i].imag(), expected_im, 0.01);
+    }
+
+    // 8-bit depth with scaling
+    std::vector<uint8_t> payload8(N * 2);
+    difi::pack_samples(samples_in.data(), N, payload8.data(), 8, 1, gain, offset);
+
+    std::vector<gr_complex> samples_out8(N);
+    size_t unpacked8 =
+        difi::unpack_samples(payload8.data(), payload8.size(), samples_out8.data(), N, 8);
+    BOOST_CHECK_EQUAL(unpacked8, N);
+
+    for (size_t i = 0; i < N; ++i) {
+        float expected_re = (samples_in[i].real() + offset.real()) * gain;
+        float expected_im = (samples_in[i].imag() + offset.imag()) * gain;
+        BOOST_CHECK_CLOSE(samples_out8[i].real(), expected_re, 0.01);
+        BOOST_CHECK_CLOSE(samples_out8[i].imag(), expected_im, 0.01);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(t_sample_packing_and_unpacking_sc8)
+{
+    const size_t N = 64;
+    std::vector<std::complex<char>> samples_in(N);
+    for (size_t i = 0; i < N; ++i) {
+        samples_in[i] =
+            std::complex<char>(static_cast<char>(i - 32), static_cast<char>(32 - i));
+    }
+
+    // 8-bit wire format with sc8
+    std::vector<uint8_t> payload8(N * 2);
+    difi::pack_samples(samples_in.data(), N, payload8.data(), 8);
+
+    std::vector<std::complex<char>> samples_out8(N);
+    size_t unpacked8 =
+        difi::unpack_samples(payload8.data(), payload8.size(), samples_out8.data(), N, 8);
+    BOOST_CHECK_EQUAL(unpacked8, N);
+
+    for (size_t i = 0; i < N; ++i) {
+        BOOST_CHECK_EQUAL(samples_out8[i].real(), samples_in[i].real());
+        BOOST_CHECK_EQUAL(samples_out8[i].imag(), samples_in[i].imag());
+    }
+
+    // 16-bit wire format with sc8
+    std::vector<uint8_t> payload16(N * 4);
+    difi::pack_samples(samples_in.data(), N, payload16.data(), 16);
+
+    std::vector<std::complex<char>> samples_out16(N);
+    size_t unpacked16 = difi::unpack_samples(
+        payload16.data(), payload16.size(), samples_out16.data(), N, 16);
+    BOOST_CHECK_EQUAL(unpacked16, N);
+
+    for (size_t i = 0; i < N; ++i) {
+        BOOST_CHECK_EQUAL(samples_out16[i].real(), samples_in[i].real());
+        BOOST_CHECK_EQUAL(samples_out16[i].imag(), samples_in[i].imag());
+    }
+}
+
 BOOST_AUTO_TEST_CASE(t_timestamp_advance)
 {
     uint32_t full = 100;
