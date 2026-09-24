@@ -85,7 +85,8 @@ difi::header difi::parse_header(const void* buf, size_t len)
     if (type_val == static_cast<uint8_t>(packet_type::data)) {
         h.type = packet_type::data;
     } else if (type_val == static_cast<uint8_t>(packet_type::context)) {
-        // In DIFI v1.2.1, version flow packets use context pktType 0x4 with packetClassCode 0x0004
+        // In DIFI v1.2.1, version flow packets use context pktType 0x4 with
+        // packetClassCode 0x0004
         if ((cid & 0xffff) == 0x0004) {
             h.type = packet_type::version;
         } else {
@@ -505,26 +506,71 @@ void difi::pack_samples(const T* in,
                         float gain,
                         gr_complex offset)
 {
-    if (depth == 16) {
-        int16_t* out16 = static_cast<int16_t*>(payload);
-        for (size_t i = 0; i < num_samples; ++i) {
-            gr_complex val(in[i].real(), in[i].imag());
-            if (scaling_mode > 0) {
-                val = (val + offset) * gain;
+    if (num_samples == 0 || in == nullptr || payload == nullptr) {
+        return;
+    }
+
+    if constexpr (std::is_same_v<T, gr_complex>) {
+        const float* src_f = reinterpret_cast<const float*>(in);
+        std::vector<float> temp_f;
+
+        if (scaling_mode > 0 && (offset.real() != 0.0f || offset.imag() != 0.0f)) {
+            temp_f.resize(num_samples * 2);
+            for (size_t i = 0; i < num_samples; ++i) {
+                temp_f[2 * i] = src_f[2 * i] + offset.real();
+                temp_f[2 * i + 1] = src_f[2 * i + 1] + offset.imag();
             }
-            out16[2 * i] = static_cast<int16_t>(val.real());
-            out16[2 * i + 1] = static_cast<int16_t>(val.imag());
+            src_f = temp_f.data();
         }
-        swap_endian_16(reinterpret_cast<uint16_t*>(out16), num_samples * 2);
-    } else {
-        int8_t* out8 = static_cast<int8_t*>(payload);
-        for (size_t i = 0; i < num_samples; ++i) {
-            gr_complex val(in[i].real(), in[i].imag());
-            if (scaling_mode > 0) {
-                val = (val + offset) * gain;
+
+        const float effective_scale = (scaling_mode > 0) ? gain : 1.0f;
+
+        if (depth == 16) {
+            int16_t* out16 = static_cast<int16_t*>(payload);
+            volk_32f_s32f_convert_16i(out16,
+                                      src_f,
+                                      effective_scale,
+                                      static_cast<unsigned int>(num_samples * 2));
+            swap_endian_16(reinterpret_cast<uint16_t*>(out16), num_samples * 2);
+        } else {
+            int8_t* out8 = static_cast<int8_t*>(payload);
+            volk_32f_s32f_convert_8i(
+                out8, src_f, effective_scale, static_cast<unsigned int>(num_samples * 2));
+        }
+    } else { // T is std::complex<char>
+        const int8_t* in8 = reinterpret_cast<const int8_t*>(in);
+        if (scaling_mode > 0 &&
+            (gain != 1.0f || offset.real() != 0.0f || offset.imag() != 0.0f)) {
+            std::vector<float> temp_f(num_samples * 2);
+            volk_8i_s32f_convert_32f(
+                temp_f.data(), in8, 1.0f, static_cast<unsigned int>(num_samples * 2));
+            for (size_t i = 0; i < num_samples; ++i) {
+                temp_f[2 * i] = (temp_f[2 * i] + offset.real()) * gain;
+                temp_f[2 * i + 1] = (temp_f[2 * i + 1] + offset.imag()) * gain;
             }
-            out8[2 * i] = static_cast<int8_t>(val.real());
-            out8[2 * i + 1] = static_cast<int8_t>(val.imag());
+            if (depth == 16) {
+                int16_t* out16 = static_cast<int16_t*>(payload);
+                volk_32f_s32f_convert_16i(out16,
+                                          temp_f.data(),
+                                          1.0f,
+                                          static_cast<unsigned int>(num_samples * 2));
+                swap_endian_16(reinterpret_cast<uint16_t*>(out16), num_samples * 2);
+            } else {
+                int8_t* out8 = static_cast<int8_t*>(payload);
+                volk_32f_s32f_convert_8i(out8,
+                                         temp_f.data(),
+                                         1.0f,
+                                         static_cast<unsigned int>(num_samples * 2));
+            }
+        } else {
+            if (depth == 16) {
+                int16_t* out16 = static_cast<int16_t*>(payload);
+                volk_8i_convert_16i(
+                    out16, in8, static_cast<unsigned int>(num_samples * 2));
+                swap_endian_16(reinterpret_cast<uint16_t*>(out16), num_samples * 2);
+            } else {
+                std::memcpy(payload, in, num_samples * 2);
+            }
         }
     }
 }
@@ -533,24 +579,44 @@ template <sample_type T>
 size_t difi::unpack_samples(
     const void* payload, size_t payload_bytes, T* out, size_t max_samples, int depth)
 {
+    if (payload == nullptr || out == nullptr || max_samples == 0) {
+        return 0;
+    }
+
     size_t bytes_per_sample = (depth == 16) ? 4 : 2;
     size_t available = payload_bytes / bytes_per_sample;
     size_t count = std::min(available, max_samples);
+    if (count == 0) {
+        return 0;
+    }
 
-    if (depth == 16) {
-        const int16_t* in16 = static_cast<const int16_t*>(payload);
-        std::vector<int16_t> buf(count * 2);
-        std::memcpy(buf.data(), in16, count * 4);
-        swap_endian_16(reinterpret_cast<uint16_t*>(buf.data()), count * 2);
-        for (size_t i = 0; i < count; ++i) {
-            out[i] = T(buf[2 * i], buf[2 * i + 1]);
+    if constexpr (std::is_same_v<T, gr_complex>) {
+        float* out_f = reinterpret_cast<float*>(out);
+        if (depth == 16) {
+            const int16_t* in16 = static_cast<const int16_t*>(payload);
+            std::vector<int16_t> buf(count * 2);
+            std::memcpy(buf.data(), in16, count * 4);
+            swap_endian_16(reinterpret_cast<uint16_t*>(buf.data()), count * 2);
+            volk_16i_s32f_convert_32f(
+                out_f, buf.data(), 1.0f, static_cast<unsigned int>(count * 2));
+        } else {
+            const int8_t* in8 = static_cast<const int8_t*>(payload);
+            volk_8i_s32f_convert_32f(
+                out_f, in8, 1.0f, static_cast<unsigned int>(count * 2));
         }
-    } else {
-        const int8_t* in8 = static_cast<const int8_t*>(payload);
-        for (size_t i = 0; i < count; ++i) {
-            out[i] = T(in8[2 * i], in8[2 * i + 1]);
+    } else { // T is std::complex<char>
+        int8_t* out8 = reinterpret_cast<int8_t*>(out);
+        if (depth == 16) {
+            const int16_t* in16 = static_cast<const int16_t*>(payload);
+            std::vector<int16_t> buf(count * 2);
+            std::memcpy(buf.data(), in16, count * 4);
+            swap_endian_16(reinterpret_cast<uint16_t*>(buf.data()), count * 2);
+            volk_16i_convert_8i(out8, buf.data(), static_cast<unsigned int>(count * 2));
+        } else {
+            std::memcpy(out, payload, count * 2);
         }
     }
+
     return count;
 }
 
