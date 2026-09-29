@@ -20,18 +20,20 @@ namespace gr {
     difi_sink_cpp<T>::make(u_int32_t reference_time_full, u_int64_t reference_time_frac, std::string ip_addr, uint32_t port, uint8_t socket_type,
                           bool mode, uint32_t samples_per_packet, int stream_number, u_int64_t samp_rate,
                           int context_interval, int context_pack_size, int bit_depth,
-                          int scaling, float gain, gr_complex offset, float max_iq, float min_iq)
+                          int scaling, float gain, gr_complex offset, float max_iq, float min_iq,
+                          bool burst_mode, uint32_t lead_time_us)
     {
       return gnuradio::make_block_sptr<difi_sink_cpp_impl<T>>(reference_time_full, reference_time_frac, ip_addr, port, socket_type, mode,
                                                               samples_per_packet, stream_number, samp_rate, context_interval, context_pack_size, bit_depth,
-                                                              scaling, gain, offset, max_iq, min_iq);
+                                                              scaling, gain, offset, max_iq, min_iq, burst_mode, lead_time_us);
     }
 
     template <class T>
     difi_sink_cpp_impl<T>::difi_sink_cpp_impl(u_int32_t reference_time_full, u_int64_t reference_time_frac, std::string ip_addr,
                                               uint32_t port, uint8_t socket_type, bool mode, uint32_t samples_per_packet, int stream_number,
                                               u_int64_t samp_rate, int context_interval, int context_pack_size, int bit_depth,
-                                              int scaling, float gain, gr_complex offset, float max_iq, float min_iq)
+                                              int scaling, float gain, gr_complex offset, float max_iq, float min_iq,
+                                              bool burst_mode, uint32_t lead_time_us)
       : gr::sync_block("difi_sink_cpp_impl",
               gr::io_signature::make(1, 1, sizeof(T)),
               gr::io_signature::make(0, 0, 0)),
@@ -65,10 +67,10 @@ namespace gr {
       d_tx_eob_key = pmt::intern("tx_eob");
       d_packet_len_key = pmt::intern("packet_len");
       d_tx_time_key = pmt::intern("tx_time");
-      d_burst_mode = false;
+      d_burst_mode = burst_mode;
       d_in_burst = false;
       d_burst_samples_remaining = 0;
-      d_lead_time_us = 10000;
+      d_lead_time_us = lead_time_us;
       d_full = reference_time_full;
       d_frac = reference_time_frac;
       d_static_bits = 0x18e00000; // header bits 31-20 must be 0x18e (posix), 0x18a (gps), or 0x186 (utc)

@@ -909,9 +909,11 @@ class qa_testcpp(gr_unittest.TestCase):
         samples_per_pkt = 100
         vita_sink = difi_sink_cpp_fc32(
             0, 0, '127.0.0.1', sink_p, socket.SOCK_DGRAM, False,
-            samples_per_pkt, 0, int(1e6), 1000, 108, 8, 0, 0, 0, 0, 0
+            samples_per_pkt, 0, int(1e6), 1000, 108, 8, 0, 0, 0, 0, 0,
+            True, 5000
         )
-        vita_sink.set_burst_mode(True)
+        assert vita_sink.burst_mode() is True
+        assert vita_sink.lead_time_us() == 5000
 
         burst1 = [complex(1.0, 1.0)] * 50
         idle = [complex(0.0, 0.0)] * 500

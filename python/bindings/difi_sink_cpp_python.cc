@@ -43,10 +43,14 @@ void bind_difi_sink_cpp_template(py::module& m, const char* classname)
            py::arg("offset"),
            py::arg("max_iq"),
            py::arg("min_iq"),
+           py::arg("burst_mode") = false,
+           py::arg("lead_time_us") = 10000,
            D(difi_sink_cpp,make)
         )
         .def("set_burst_mode", &difi_sink_cpp::set_burst_mode, py::arg("enable"))
-        .def("set_lead_time_us", &difi_sink_cpp::set_lead_time_us, py::arg("lead_time_us"));
+        .def("burst_mode", &difi_sink_cpp::burst_mode)
+        .def("set_lead_time_us", &difi_sink_cpp::set_lead_time_us, py::arg("lead_time_us"))
+        .def("lead_time_us", &difi_sink_cpp::lead_time_us);
 
 }
 

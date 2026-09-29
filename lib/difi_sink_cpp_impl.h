@@ -99,7 +99,8 @@ namespace gr {
      public:
       difi_sink_cpp_impl(u_int32_t reference_time_full, u_int64_t reference_time_frac, std::string ip_addr, uint32_t port, uint8_t socket_type, bool mode,
                         uint32_t samples_per_packet, int stream_number, u_int64_t samp_rate,
-                        int context_interval, int context_pack_size, int bit_depth, int scaling, float gain, gr_complex offset, float max_iq, float min_iq);
+                        int context_interval, int context_pack_size, int bit_depth, int scaling, float gain, gr_complex offset, float max_iq, float min_iq,
+                        bool burst_mode = false, uint32_t lead_time_us = 10000);
       ~difi_sink_cpp_impl();
 
       // Where all the action really happens
@@ -110,7 +111,9 @@ namespace gr {
       );
 
       void set_burst_mode(bool enable) override { d_burst_mode = enable; }
+      bool burst_mode() const override { return d_burst_mode; }
       void set_lead_time_us(uint32_t lead_time_us) override { d_lead_time_us = lead_time_us; }
+      uint32_t lead_time_us() const override { return d_lead_time_us; }
     };
 
   } // namespace difi
