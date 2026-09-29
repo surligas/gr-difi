@@ -902,6 +902,57 @@ class qa_testcpp(gr_unittest.TestCase):
         if rec_proc.exitcode != 0:
             pytest.fail()
 
+    def test_burst_mode_packet_len(self):
+        import pmt
+        _, sink_p = get_open_ports()
+        tb = gr.top_block()
+        samples_per_pkt = 100
+        vita_sink = difi_sink_cpp_fc32(
+            0, 0, '127.0.0.1', sink_p, socket.SOCK_DGRAM, False,
+            samples_per_pkt, 0, int(1e6), 1000, 108, 8, 0, 0, 0, 0, 0
+        )
+        vita_sink.set_burst_mode(True)
+
+        burst1 = [complex(1.0, 1.0)] * 50
+        idle = [complex(0.0, 0.0)] * 500
+        burst2 = [complex(2.0, 2.0)] * 50
+        data = burst1 + idle + burst2
+
+        tag1 = gr.tag_t()
+        tag1.offset = 0
+        tag1.key = pmt.intern("packet_len")
+        tag1.value = pmt.from_long(50)
+
+        tag2 = gr.tag_t()
+        tag2.offset = 550
+        tag2.key = pmt.intern("packet_len")
+        tag2.value = pmt.from_long(50)
+
+        src = blocks.vector_source_c(data, False, 1, [tag1, tag2])
+        tb.connect(src, vita_sink)
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.bind(('127.0.0.1', sink_p))
+        sock.settimeout(1.0)
+
+        tb.start()
+        received = []
+        try:
+            while True:
+                pkt, _ = sock.recvfrom(2048)
+                hdr = struct.unpack('!I', pkt[:4])[0]
+                pkt_type = (hdr >> 28) & 0xf
+                if pkt_type == 1:
+                    received.append(pkt)
+        except socket.timeout:
+            pass
+        finally:
+            tb.stop()
+            tb.wait()
+            sock.close()
+
+        assert len(received) == 2
+
 
 # helper functions
 # below

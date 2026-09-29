@@ -44,7 +44,9 @@ void bind_difi_sink_cpp_template(py::module& m, const char* classname)
            py::arg("max_iq"),
            py::arg("min_iq"),
            D(difi_sink_cpp,make)
-        );
+        )
+        .def("set_burst_mode", &difi_sink_cpp::set_burst_mode, py::arg("enable"))
+        .def("set_lead_time_us", &difi_sink_cpp::set_lead_time_us, py::arg("lead_time_us"));
 
 }
 
