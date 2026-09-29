@@ -10,14 +10,14 @@
 
 #include <difi/difi_sink_cpp.h>
 #include <difi/difi.hpp>
+#include <memory>
 
 
 
 namespace gr {
   namespace difi {
 
-  class tcp_client_legacy;
-  class udp_socket;
+  class transport;
 
     template <class T>
     class difi_sink_cpp_impl : public difi_sink_cpp<T>
@@ -84,8 +84,7 @@ namespace gr {
         float d_max_iq;
         float d_min_iq;
 
-        tcp_client_legacy* p_tcpsocket;
-        udp_socket* p_udpsocket;
+        std::unique_ptr<transport> m_transport;
 
      public:
       difi_sink_cpp_impl(u_int32_t reference_time_full, u_int64_t reference_time_frac, std::string ip_addr, uint32_t port, uint8_t socket_type, bool mode,
