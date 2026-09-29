@@ -4,6 +4,8 @@
 // See License.txt in the project root for license information.
 
 #include <gnuradio/io_signature.h>
+#include <algorithm>
+#include <chrono>
 #include <memory>
 #include "difi_sink_cpp_impl.h"
 
@@ -59,6 +61,14 @@ namespace gr {
       d_context_key = pmt::intern("context");
       d_pkt_n_key = pmt::intern("pck_n");
       d_static_change_key = pmt::intern("static_change");
+      d_tx_sob_key = pmt::intern("tx_sob");
+      d_tx_eob_key = pmt::intern("tx_eob");
+      d_packet_len_key = pmt::intern("packet_len");
+      d_tx_time_key = pmt::intern("tx_time");
+      d_burst_mode = false;
+      d_in_burst = false;
+      d_burst_samples_remaining = 0;
+      d_lead_time_us = 10000;
       d_full = reference_time_full;
       d_frac = reference_time_frac;
       d_static_bits = 0x18e00000; // header bits 31-20 must be 0x18e (posix), 0x18a (gps), or 0x186 (utc)
@@ -170,26 +180,124 @@ namespace gr {
     difi_sink_cpp_impl<T>::~difi_sink_cpp_impl() = default;
 
     template <class T>
+    void difi_sink_cpp_impl<T>::reanchor_timestamp()
+    {
+      auto now = std::chrono::system_clock::now();
+      auto now_s = std::chrono::time_point_cast<std::chrono::seconds>(now);
+      auto frac_duration = now - now_s;
+      auto frac_ps = std::chrono::duration_cast<std::chrono::duration<uint64_t, std::pico>>(frac_duration).count();
+      uint32_t full = static_cast<uint32_t>(now_s.time_since_epoch().count());
+      uint64_t frac = static_cast<uint64_t>(frac_ps);
+
+      frac += static_cast<uint64_t>(d_lead_time_us) * 1000000ULL;
+      if (frac >= difi::PICO_CONVERSION) {
+        full += static_cast<uint32_t>(frac / difi::PICO_CONVERSION);
+        frac = frac % difi::PICO_CONVERSION;
+      }
+
+      d_full = full;
+      d_frac = frac;
+      d_pcks_since_last_reference = 0;
+    }
+
+    template <class T>
+    void difi_sink_cpp_impl<T>::flush_current_packet()
+    {
+      if (d_current_buff_idx <= 0) {
+        return;
+      }
+      std::fill(d_out_buf.begin() + d_current_buff_idx, d_out_buf.end(), 0);
+
+      if (!d_is_paired_mode && d_packet_count % d_contex_packet_interval == 0) {
+        send_context();
+      }
+
+      auto to_send = pack_data();
+      if (m_transport) {
+        m_transport->send(to_send.data(), to_send.size());
+      }
+
+      d_pkt_n = (d_pkt_n + 1) % difi::VITA_PKT_MOD;
+      d_current_buff_idx = 0;
+      d_pcks_since_last_reference++;
+      d_packet_count++;
+    }
+
+    template <class T>
     int difi_sink_cpp_impl<T>::work(int noutput_items,
         gr_vector_const_void_star &input_items,
         gr_vector_void_star &output_items)
     {
 
       const T *in = reinterpret_cast<const T*>(input_items[0]);
+      auto abs_offset = this->nitems_read(0);
 
       if(d_is_paired_mode)
       {
         process_tags(noutput_items);
       }
 
+      std::vector<tag_t> tags;
+      this->get_tags_in_range(tags, 0, abs_offset, abs_offset + noutput_items);
+      std::sort(tags.begin(), tags.end(), [](const tag_t &a, const tag_t &b) {
+        return a.offset < b.offset;
+      });
+      size_t tag_idx = 0;
+
       for(int i = 0; i < noutput_items; i++)
       {
+        uint64_t current_offset = abs_offset + i;
+        bool burst_started_here = false;
+        bool burst_ended_here = false;
+        bool has_explicit_time = false;
+
+        while (tag_idx < tags.size() && tags[tag_idx].offset == current_offset) {
+          const auto &tag = tags[tag_idx];
+          if (pmt::eqv(d_tx_sob_key, tag.key)) {
+            d_burst_mode = true;
+            d_in_burst = true;
+            burst_started_here = true;
+          } else if (pmt::eqv(d_packet_len_key, tag.key)) {
+            d_burst_mode = true;
+            d_in_burst = true;
+            burst_started_here = true;
+            d_burst_samples_remaining = pmt::to_uint64(tag.value);
+          } else if (pmt::eqv(d_tx_eob_key, tag.key)) {
+            burst_ended_here = true;
+          } else if (pmt::eqv(d_tx_time_key, tag.key)) {
+            if (pmt::is_tuple(tag.value) && pmt::length(tag.value) >= 2) {
+              d_full = static_cast<uint32_t>(pmt::to_uint64(pmt::tuple_ref(tag.value, 0)));
+              d_frac = static_cast<uint64_t>(pmt::to_double(pmt::tuple_ref(tag.value, 1)) * difi::PICO_CONVERSION);
+              d_pcks_since_last_reference = 0;
+              has_explicit_time = true;
+            }
+          }
+          tag_idx++;
+        }
+
+        if (burst_started_here && !has_explicit_time) {
+          reanchor_timestamp();
+        }
+
+        // Drop/skip idle samples when burst mode is active
+        if (d_burst_mode && !d_in_burst && d_burst_samples_remaining == 0) {
+          continue;
+        }
+
         gr_complex in_val = gr_complex(in[i].real(), in[i].imag());
         if(d_scaling_mode > 0){
             in_val = (in_val + d_offset) * d_gain;
         }
         this->pack_T(in_val);
         d_current_buff_idx += 2 * d_unpack_idx_size;
+
+        if (d_burst_samples_remaining > 0) {
+          d_burst_samples_remaining--;
+          if (d_burst_samples_remaining == 0) {
+            burst_ended_here = true;
+          }
+        }
+
         if(d_current_buff_idx >= d_out_buf.size())
         {
           if(!d_is_paired_mode and d_packet_count % d_contex_packet_interval == 0)
@@ -205,6 +313,11 @@ namespace gr {
           d_current_buff_idx = 0;
           d_pcks_since_last_reference++;
           d_packet_count++;
+        }
+
+        if (burst_ended_here) {
+          flush_current_packet();
+          d_in_burst = false;
         }
       }
       return noutput_items;

@@ -50,6 +50,8 @@ namespace gr {
         std::vector<int8_t> pack_data();
         void send_context();
         std::tuple<u_int32_t, u_int64_t> add_frac_full();
+        void reanchor_timestamp();
+        void flush_current_packet();
 
         int d_stream_number;
         u_int32_t d_full_samp;
@@ -58,6 +60,14 @@ namespace gr {
         pmt::pmt_t d_context_key;
         pmt::pmt_t d_pkt_n_key;
         pmt::pmt_t d_static_change_key;
+        pmt::pmt_t d_tx_sob_key;
+        pmt::pmt_t d_tx_eob_key;
+        pmt::pmt_t d_packet_len_key;
+        pmt::pmt_t d_tx_time_key;
+        bool d_burst_mode;
+        bool d_in_burst;
+        uint64_t d_burst_samples_remaining;
+        uint32_t d_lead_time_us;
         u_int32_t d_full;
         u_int64_t d_frac;
         u_int32_t d_data_len;
@@ -98,6 +108,9 @@ namespace gr {
               gr_vector_const_void_star &input_items,
               gr_vector_void_star &output_items
       );
+
+      void set_burst_mode(bool enable) override { d_burst_mode = enable; }
+      void set_lead_time_us(uint32_t lead_time_us) override { d_lead_time_us = lead_time_us; }
     };
 
   } // namespace difi
