@@ -4,10 +4,11 @@
 // See License.txt in the project root for license information.
 
 #include <gnuradio/io_signature.h>
+#include <memory>
 #include "difi_sink_cpp_impl.h"
 
-#include "tcp_client_legacy.h"
-#include "udp_socket.h"
+#include "tcp_client.hpp"
+#include "udp_client.hpp"
 
 namespace gr {
   namespace difi {
@@ -41,20 +42,13 @@ namespace gr {
               d_packet_count(0),
               d_context_packet_count(0),
               d_context_packet_size(context_pack_size),
-              d_contex_packet_interval(context_interval),
-              p_tcpsocket(0),
-              p_udpsocket(0)
+              d_contex_packet_interval(context_interval)
 
     {
-      socket_type = (socket_type == 1) ?  SOCK_STREAM : SOCK_DGRAM;
-
-      if(socket_type == SOCK_DGRAM)
-      {
-        p_udpsocket = new udp_socket(ip_addr,port,false);
-      }
-      else
-      {
-        p_tcpsocket = new tcp_client_legacy(ip_addr,port);
+      if (socket_type == 1) {
+        m_transport = std::make_unique<tcp_client>(ip_addr, static_cast<uint16_t>(port));
+      } else {
+        m_transport = std::make_unique<udp_client>(ip_addr, static_cast<uint16_t>(port));
       }
 
       if (samples_per_packet < 2)
@@ -173,32 +167,13 @@ namespace gr {
     }
 
     template <class T>
-    difi_sink_cpp_impl<T>::~difi_sink_cpp_impl()
-    {
-      if(p_udpsocket)
-        delete p_udpsocket;
-
-      if(p_tcpsocket)
-        delete p_tcpsocket;
-    }
+    difi_sink_cpp_impl<T>::~difi_sink_cpp_impl() = default;
 
     template <class T>
     int difi_sink_cpp_impl<T>::work(int noutput_items,
         gr_vector_const_void_star &input_items,
         gr_vector_void_star &output_items)
     {
-
-      if(p_tcpsocket)
-      {
-        if(!p_tcpsocket->is_connected())
-        {
-          bool res = p_tcpsocket->connect();
-          if(!res)
-          {
-            return 0;
-          }
-        }
-      }
 
       const T *in = reinterpret_cast<const T*>(input_items[0]);
 
@@ -221,13 +196,9 @@ namespace gr {
               send_context();
 
           auto to_send = pack_data();
-          if(p_udpsocket)
+          if(m_transport)
           {
-            p_udpsocket->send(&to_send[0],to_send.size());
-          }
-          if(p_tcpsocket)
-          {
-            p_tcpsocket->send(&to_send[0],to_send.size());
+            m_transport->send(to_send.data(), to_send.size());
           }
 
           d_pkt_n = (d_pkt_n + 1) % difi::VITA_PKT_MOD;
@@ -252,14 +223,9 @@ namespace gr {
           auto raw = pmt::dict_ref(tag.value, pmt::intern("raw"), pmt::get_PMT_NIL());;
           std::vector<int8_t> to_send = pmt::s8vector_elements(raw);
           d_raw = to_send;
-          if(p_udpsocket)
+          if(m_transport)
           {
-            p_udpsocket->send(&to_send[0], to_send.size());
-          }
-
-          if(p_tcpsocket)
-          {
-            p_tcpsocket->send(&to_send[0], to_send.size());
+            m_transport->send(to_send.data(), to_send.size());
           }
 
           std::copy(to_send.begin(), to_send.begin() + difi::DIFI_HEADER_SIZE, d_raw.begin());
@@ -319,14 +285,9 @@ namespace gr {
         }
         u_int32_t header = d_context_static_bits ^ d_context_packet_count << 16 ^ (d_context_packet_size / 4);
         pack_u32(&d_context_raw[0], header);
-        if(p_udpsocket)
+        if(m_transport)
         {
-          p_udpsocket->send((int8_t*)&d_context_raw[0],d_context_raw.size());
-        }
-
-        if(p_tcpsocket)
-        {
-          p_tcpsocket->send((int8_t*)&d_context_raw[0], d_context_raw.size());
+          m_transport->send(d_context_raw.data(), d_context_raw.size());
         }
         d_context_packet_count = (d_context_packet_count + 1) % difi::VITA_PKT_MOD;
     }
