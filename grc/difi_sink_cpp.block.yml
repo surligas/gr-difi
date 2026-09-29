@@ -11,7 +11,7 @@ templates:
   make: difi.difi_sink_cpp_${type.fcn}(${reference_time_full}, ${reference_time_frac}, ${ip_addr}, ${port}, ${protocol}, bool(${mode}),
                                                        ${data_size}, ${stream_id}, ${sample_rate},
                                                        ${context_packet_send_count}, int(${context_pack_size}), int(${bit_depth}), int(${scaling}), ${gain},
-                                                       ${offset}, ${max_iq}, ${min_iq})
+                                                       ${offset}, ${max_iq}, ${min_iq}, bool(${burst_mode}), int(${lead_time_us}))
 
 parameters:
 - id: type
@@ -20,6 +20,17 @@ parameters:
   options: [complex, complex8]
   option_attributes:
       fcn: [fc32, sc8]
+- id: burst_mode
+  label: Burst Mode
+  dtype: enum
+  options: ['False', 'True']
+  option_labels: ['Streaming (Continuous)', 'Burst (Tagged)']
+  default: 'True'
+- id: lead_time_us
+  label: Burst Lead Time (us)
+  dtype: int
+  default: 10000
+  hide: ${ ('none' if burst_mode == 'True' else 'all') }
 - id: mode
   label: Mode
   dtype: enum

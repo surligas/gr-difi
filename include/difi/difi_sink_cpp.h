@@ -21,10 +21,13 @@ namespace gr {
       
       static sptr make(u_int32_t reference_time_full, u_int64_t reference_time_frac, std::string ip_addr, uint32_t port, uint8_t socket_type, bool mode, uint32_t samples_per_packet, 
                       int stream_number, u_int64_t samp_rate, int context_interval, int context_pack_size, int bit_depth,
-                      int scaling, float gain, gr_complex offset, float max_iq, float min_iq);
+                      int scaling, float gain, gr_complex offset, float max_iq, float min_iq,
+                      bool burst_mode = false, uint32_t lead_time_us = 10000);
 
       virtual void set_burst_mode(bool enable) = 0;
+      virtual bool burst_mode() const = 0;
       virtual void set_lead_time_us(uint32_t lead_time_us) = 0;
+      virtual uint32_t lead_time_us() const = 0;
     };
     typedef difi_sink_cpp<gr_complex> difi_sink_cpp_fc32;
     typedef difi_sink_cpp<std::complex<char>> difi_sink_cpp_sc8;
