@@ -301,9 +301,9 @@ BOOST_AUTO_TEST_CASE(t_sample_packing_scaling_and_offset)
     float gain = 2.0f;
     gr_complex offset(10.0f, -5.0f);
 
-    // 16-bit depth with scaling
+    // 16-bit depth with scaling (different real/imag offset, tests volk_32fc_x2_add_32fc)
     std::vector<uint8_t> payload16(N * 4);
-    difi::pack_samples(samples_in.data(), N, payload16.data(), 16, 1, gain, offset);
+    difi::pack_samples(samples_in.data(), N, payload16.data(), 16, gain, offset);
 
     std::vector<gr_complex> samples_out16(N);
     size_t unpacked16 = difi::unpack_samples(
@@ -317,9 +317,24 @@ BOOST_AUTO_TEST_CASE(t_sample_packing_scaling_and_offset)
         BOOST_CHECK_CLOSE(samples_out16[i].imag(), expected_im, 0.01);
     }
 
+    // 16-bit depth span overload with scaling
+    std::vector<uint8_t> span_payload16(N * 4);
+    difi::pack_samples(
+        std::span<const gr_complex>(samples_in), std::span<uint8_t>(span_payload16), 16, gain, offset);
+    std::vector<gr_complex> span_out16(N);
+    size_t span_unpacked16 = difi::unpack_samples(
+        span_payload16.data(), span_payload16.size(), span_out16.data(), N, 16);
+    BOOST_CHECK_EQUAL(span_unpacked16, N);
+    for (size_t i = 0; i < N; ++i) {
+        float expected_re = (samples_in[i].real() + offset.real()) * gain;
+        float expected_im = (samples_in[i].imag() + offset.imag()) * gain;
+        BOOST_CHECK_CLOSE(span_out16[i].real(), expected_re, 0.01);
+        BOOST_CHECK_CLOSE(span_out16[i].imag(), expected_im, 0.01);
+    }
+
     // 8-bit depth with scaling
     std::vector<uint8_t> payload8(N * 2);
-    difi::pack_samples(samples_in.data(), N, payload8.data(), 8, 1, gain, offset);
+    difi::pack_samples(samples_in.data(), N, payload8.data(), 8, gain, offset);
 
     std::vector<gr_complex> samples_out8(N);
     size_t unpacked8 =
@@ -332,6 +347,37 @@ BOOST_AUTO_TEST_CASE(t_sample_packing_scaling_and_offset)
         BOOST_CHECK_CLOSE(samples_out8[i].real(), expected_re, 0.01);
         BOOST_CHECK_CLOSE(samples_out8[i].imag(), expected_im, 0.01);
     }
+
+    // Test equal real and imag offset
+    gr_complex equal_offset(4.0f, 4.0f);
+    std::vector<uint8_t> payload_eq(N * 4);
+    difi::pack_samples(samples_in.data(), N, payload_eq.data(), 16, gain, equal_offset);
+
+    std::vector<gr_complex> samples_out_eq(N);
+    size_t unpacked_eq = difi::unpack_samples(
+        payload_eq.data(), payload_eq.size(), samples_out_eq.data(), N, 16);
+    BOOST_CHECK_EQUAL(unpacked_eq, N);
+    for (size_t i = 0; i < N; ++i) {
+        float expected_re = (samples_in[i].real() + equal_offset.real()) * gain;
+        float expected_im = (samples_in[i].imag() + equal_offset.imag()) * gain;
+        BOOST_CHECK_CLOSE(samples_out_eq[i].real(), expected_re, 0.01);
+        BOOST_CHECK_CLOSE(samples_out_eq[i].imag(), expected_im, 0.01);
+    }
+
+    // Test gain only with default offset
+    std::vector<uint8_t> payload_gain_only(N * 4);
+    difi::pack_samples(samples_in.data(), N, payload_gain_only.data(), 16, gain);
+
+    std::vector<gr_complex> samples_out_gain_only(N);
+    size_t unpacked_gain_only = difi::unpack_samples(
+        payload_gain_only.data(), payload_gain_only.size(), samples_out_gain_only.data(), N, 16);
+    BOOST_CHECK_EQUAL(unpacked_gain_only, N);
+    for (size_t i = 0; i < N; ++i) {
+        float expected_re = samples_in[i].real() * gain;
+        float expected_im = samples_in[i].imag() * gain;
+        BOOST_CHECK_CLOSE(samples_out_gain_only[i].real(), expected_re, 0.01);
+        BOOST_CHECK_CLOSE(samples_out_gain_only[i].imag(), expected_im, 0.01);
+    }
 }
 
 BOOST_AUTO_TEST_CASE(t_sample_packing_and_unpacking_sc8)
@@ -343,7 +389,7 @@ BOOST_AUTO_TEST_CASE(t_sample_packing_and_unpacking_sc8)
             std::complex<char>(static_cast<char>(i - 32), static_cast<char>(32 - i));
     }
 
-    // 8-bit wire format with sc8
+    // 8-bit wire format with sc8 (no scaling)
     std::vector<uint8_t> payload8(N * 2);
     difi::pack_samples(samples_in.data(), N, payload8.data(), 8);
 
@@ -357,7 +403,7 @@ BOOST_AUTO_TEST_CASE(t_sample_packing_and_unpacking_sc8)
         BOOST_CHECK_EQUAL(samples_out8[i].imag(), samples_in[i].imag());
     }
 
-    // 16-bit wire format with sc8
+    // 16-bit wire format with sc8 (no scaling)
     std::vector<uint8_t> payload16(N * 4);
     difi::pack_samples(samples_in.data(), N, payload16.data(), 16);
 
@@ -369,6 +415,24 @@ BOOST_AUTO_TEST_CASE(t_sample_packing_and_unpacking_sc8)
     for (size_t i = 0; i < N; ++i) {
         BOOST_CHECK_EQUAL(samples_out16[i].real(), samples_in[i].real());
         BOOST_CHECK_EQUAL(samples_out16[i].imag(), samples_in[i].imag());
+    }
+
+    // 16-bit wire format with sc8 and scaling
+    float gain = 2.0f;
+    gr_complex offset(5.0f, -3.0f);
+    std::vector<uint8_t> payload16_scaled(N * 4);
+    difi::pack_samples(samples_in.data(), N, payload16_scaled.data(), 16, gain, offset);
+
+    std::vector<gr_complex> samples_out16_scaled(N);
+    size_t unpacked16_scaled = difi::unpack_samples(
+        payload16_scaled.data(), payload16_scaled.size(), samples_out16_scaled.data(), N, 16);
+    BOOST_CHECK_EQUAL(unpacked16_scaled, N);
+
+    for (size_t i = 0; i < N; ++i) {
+        float expected_re = (static_cast<float>(samples_in[i].real()) + offset.real()) * gain;
+        float expected_im = (static_cast<float>(samples_in[i].imag()) + offset.imag()) * gain;
+        BOOST_CHECK_CLOSE(samples_out16_scaled[i].real(), expected_re, 0.01);
+        BOOST_CHECK_CLOSE(samples_out16_scaled[i].imag(), expected_im, 0.01);
     }
 }
 

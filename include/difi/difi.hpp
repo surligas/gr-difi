@@ -403,15 +403,42 @@ public:
     // --- Sample Packing and Unpacking ---
 
     /**
-     * @brief Packs complex samples into raw payload bytes with optional scaling.
+     * @brief Packs complex samples into raw payload bytes without scaling.
      *
      * @tparam T sample type (gr_complex or std::complex<char>)
      * @param in input complex samples
      * @param num_samples number of complex samples
      * @param payload output buffer
      * @param depth bit depth (8 or 16)
-     * @param scaling_mode 0: none, 1: manual (gain & offset)
-     * @param gain scalar multiplier for manual scaling
+     */
+    template <sample_type T>
+    static void pack_samples(const T* in,
+                             size_t num_samples,
+                             void* payload,
+                             int depth);
+
+    /**
+     * @brief Packs complex samples into raw payload span without scaling.
+     *
+     * @tparam T sample type (gr_complex or std::complex<char>)
+     * @param in input sample span
+     * @param payload output payload span
+     * @param depth bit depth (8 or 16)
+     */
+    template <sample_type T>
+    static void pack_samples(std::span<const T> in,
+                             std::span<uint8_t> payload,
+                             int depth);
+
+    /**
+     * @brief Packs complex samples into raw payload bytes with gain and offset.
+     *
+     * @tparam T sample type (gr_complex or std::complex<char>)
+     * @param in input complex samples
+     * @param num_samples number of complex samples
+     * @param payload output buffer
+     * @param depth bit depth (8 or 16)
+     * @param gain scalar multiplier
      * @param offset complex offset added prior to gain
      */
     template <sample_type T>
@@ -419,27 +446,24 @@ public:
                              size_t num_samples,
                              void* payload,
                              int depth,
-                             int scaling_mode = 0,
-                             float gain = 1.0f,
+                             float gain,
                              gr_complex offset = { 0.0f, 0.0f });
 
     /**
-     * @brief Packs complex samples into raw payload span with optional scaling.
+     * @brief Packs complex samples into raw payload span with gain and offset.
      *
      * @tparam T sample type (gr_complex or std::complex<char>)
      * @param in input sample span
      * @param payload output payload span
      * @param depth bit depth (8 or 16)
-     * @param scaling_mode 0: none, 1: manual (gain & offset)
-     * @param gain scalar multiplier for manual scaling
+     * @param gain scalar multiplier
      * @param offset complex offset added prior to gain
      */
     template <sample_type T>
     static void pack_samples(std::span<const T> in,
                              std::span<uint8_t> payload,
                              int depth,
-                             int scaling_mode = 0,
-                             float gain = 1.0f,
+                             float gain,
                              gr_complex offset = { 0.0f, 0.0f });
 
     /**
@@ -608,12 +632,19 @@ inline difi::context_variant difi::parse_context(std::span<const uint8_t> buf)
 template <sample_type T>
 inline void difi::pack_samples(std::span<const T> in,
                                std::span<uint8_t> payload,
+                               int depth)
+{
+    pack_samples(in.data(), in.size(), payload.data(), depth);
+}
+
+template <sample_type T>
+inline void difi::pack_samples(std::span<const T> in,
+                               std::span<uint8_t> payload,
                                int depth,
-                               int scaling_mode,
                                float gain,
                                gr_complex offset)
 {
-    pack_samples(in.data(), in.size(), payload.data(), depth, scaling_mode, gain, offset);
+    pack_samples(in.data(), in.size(), payload.data(), depth, gain, offset);
 }
 
 template <sample_type T>

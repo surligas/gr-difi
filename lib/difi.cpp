@@ -498,11 +498,41 @@ std::pair<uint32_t, uint64_t> difi::advance_timestamp(uint32_t full,
 }
 
 template <sample_type T>
+void difi::pack_samples(const T* in, size_t num_samples, void* payload, int depth)
+{
+    if (num_samples == 0 || in == nullptr || payload == nullptr) {
+        return;
+    }
+
+    if constexpr (std::is_same_v<T, gr_complex>) {
+        const float* src_f = reinterpret_cast<const float*>(in);
+        if (depth == 16) {
+            int16_t* out16 = static_cast<int16_t*>(payload);
+            volk_32f_s32f_convert_16i(
+                out16, src_f, 1.0f, static_cast<unsigned int>(num_samples * 2));
+            swap_endian_16(reinterpret_cast<uint16_t*>(out16), num_samples * 2);
+        } else {
+            int8_t* out8 = static_cast<int8_t*>(payload);
+            volk_32f_s32f_convert_8i(
+                out8, src_f, 1.0f, static_cast<unsigned int>(num_samples * 2));
+        }
+    } else { // T is std::complex<char>
+        const int8_t* in8 = reinterpret_cast<const int8_t*>(in);
+        if (depth == 16) {
+            int16_t* out16 = static_cast<int16_t*>(payload);
+            volk_8i_convert_16i(out16, in8, static_cast<unsigned int>(num_samples * 2));
+            swap_endian_16(reinterpret_cast<uint16_t*>(out16), num_samples * 2);
+        } else {
+            std::memcpy(payload, in, num_samples * 2);
+        }
+    }
+}
+
+template <sample_type T>
 void difi::pack_samples(const T* in,
                         size_t num_samples,
                         void* payload,
                         int depth,
-                        int scaling_mode,
                         float gain,
                         gr_complex offset)
 {
@@ -514,63 +544,44 @@ void difi::pack_samples(const T* in,
         const float* src_f = reinterpret_cast<const float*>(in);
         std::vector<float> temp_f;
 
-        if (scaling_mode > 0 && (offset.real() != 0.0f || offset.imag() != 0.0f)) {
-            temp_f.resize(num_samples * 2);
-            for (size_t i = 0; i < num_samples; ++i) {
-                temp_f[2 * i] = src_f[2 * i] + offset.real();
-                temp_f[2 * i + 1] = src_f[2 * i + 1] + offset.imag();
-            }
-            src_f = temp_f.data();
-        }
-
-        const float effective_scale = (scaling_mode > 0) ? gain : 1.0f;
+        temp_f.resize(num_samples * 2);
+        std::vector<gr_complex> offset_vec(num_samples, offset);
+        volk_32fc_x2_add_32fc(reinterpret_cast<lv_32fc_t*>(temp_f.data()),
+                              reinterpret_cast<const lv_32fc_t*>(src_f),
+                              reinterpret_cast<const lv_32fc_t*>(offset_vec.data()),
+                              static_cast<unsigned int>(num_samples));
+        src_f = temp_f.data();
 
         if (depth == 16) {
             int16_t* out16 = static_cast<int16_t*>(payload);
-            volk_32f_s32f_convert_16i(out16,
-                                      src_f,
-                                      effective_scale,
-                                      static_cast<unsigned int>(num_samples * 2));
+            volk_32f_s32f_convert_16i(
+                out16, src_f, gain, static_cast<unsigned int>(num_samples * 2));
             swap_endian_16(reinterpret_cast<uint16_t*>(out16), num_samples * 2);
         } else {
             int8_t* out8 = static_cast<int8_t*>(payload);
             volk_32f_s32f_convert_8i(
-                out8, src_f, effective_scale, static_cast<unsigned int>(num_samples * 2));
+                out8, src_f, gain, static_cast<unsigned int>(num_samples * 2));
         }
     } else { // T is std::complex<char>
         const int8_t* in8 = reinterpret_cast<const int8_t*>(in);
-        if (scaling_mode > 0 &&
-            (gain != 1.0f || offset.real() != 0.0f || offset.imag() != 0.0f)) {
-            std::vector<float> temp_f(num_samples * 2);
-            volk_8i_s32f_convert_32f(
-                temp_f.data(), in8, 1.0f, static_cast<unsigned int>(num_samples * 2));
-            for (size_t i = 0; i < num_samples; ++i) {
-                temp_f[2 * i] = (temp_f[2 * i] + offset.real()) * gain;
-                temp_f[2 * i + 1] = (temp_f[2 * i + 1] + offset.imag()) * gain;
-            }
-            if (depth == 16) {
-                int16_t* out16 = static_cast<int16_t*>(payload);
-                volk_32f_s32f_convert_16i(out16,
-                                          temp_f.data(),
-                                          1.0f,
-                                          static_cast<unsigned int>(num_samples * 2));
-                swap_endian_16(reinterpret_cast<uint16_t*>(out16), num_samples * 2);
-            } else {
-                int8_t* out8 = static_cast<int8_t*>(payload);
-                volk_32f_s32f_convert_8i(out8,
-                                         temp_f.data(),
-                                         1.0f,
-                                         static_cast<unsigned int>(num_samples * 2));
-            }
+        std::vector<float> temp_f(num_samples * 2);
+        volk_8i_s32f_convert_32f(
+            temp_f.data(), in8, 1.0f, static_cast<unsigned int>(num_samples * 2));
+
+        std::vector<gr_complex> offset_vec(num_samples, offset);
+        volk_32fc_x2_add_32fc(reinterpret_cast<lv_32fc_t*>(temp_f.data()),
+                              reinterpret_cast<const lv_32fc_t*>(temp_f.data()),
+                              reinterpret_cast<const lv_32fc_t*>(offset_vec.data()),
+                              static_cast<unsigned int>(num_samples));
+        if (depth == 16) {
+            int16_t* out16 = static_cast<int16_t*>(payload);
+            volk_32f_s32f_convert_16i(
+                out16, temp_f.data(), gain, static_cast<unsigned int>(num_samples * 2));
+            swap_endian_16(reinterpret_cast<uint16_t*>(out16), num_samples * 2);
         } else {
-            if (depth == 16) {
-                int16_t* out16 = static_cast<int16_t*>(payload);
-                volk_8i_convert_16i(
-                    out16, in8, static_cast<unsigned int>(num_samples * 2));
-                swap_endian_16(reinterpret_cast<uint16_t*>(out16), num_samples * 2);
-            } else {
-                std::memcpy(payload, in, num_samples * 2);
-            }
+            int8_t* out8 = static_cast<int8_t*>(payload);
+            volk_32f_s32f_convert_8i(
+                out8, temp_f.data(), gain, static_cast<unsigned int>(num_samples * 2));
         }
     }
 }
@@ -885,11 +896,16 @@ difi::make_pkt_n_dict(uint8_t pkt_n, size_t data_len, uint32_t full, uint64_t fr
 }
 
 // Explicit template instantiations
-template void difi::pack_samples<gr_complex>(
-    const gr_complex*, size_t, void*, int, int, float, gr_complex);
+template void difi::pack_samples<gr_complex>(const gr_complex*, size_t, void*, int);
+
+template void
+difi::pack_samples<std::complex<char>>(const std::complex<char>*, size_t, void*, int);
+
+template void
+difi::pack_samples<gr_complex>(const gr_complex*, size_t, void*, int, float, gr_complex);
 
 template void difi::pack_samples<std::complex<char>>(
-    const std::complex<char>*, size_t, void*, int, int, float, gr_complex);
+    const std::complex<char>*, size_t, void*, int, float, gr_complex);
 
 template size_t
 difi::unpack_samples<gr_complex>(const void*, size_t, gr_complex*, size_t, int);
