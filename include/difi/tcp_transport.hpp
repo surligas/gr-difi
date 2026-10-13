@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "transport.hpp"
+#include <difi/transport.hpp>
 #include <cstddef>
 
 namespace gr::difi {

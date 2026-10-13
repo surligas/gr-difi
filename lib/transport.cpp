@@ -6,7 +6,7 @@
  *
  */
 
-#include "transport.hpp"
+#include <difi/transport.hpp>
 
 #include <cerrno>
 #include <cstring>

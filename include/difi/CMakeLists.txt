@@ -13,5 +13,11 @@ install(FILES
     api.h
     difi_source_cpp.h
     difi_sink_cpp.h
-    difi.hpp DESTINATION include/difi
+    difi.hpp
+    transport.hpp
+    udp_client.hpp
+    tcp_client.hpp
+    tcp_transport.hpp
+    udp_server.hpp
+    tcp_server.hpp DESTINATION include/difi
 )

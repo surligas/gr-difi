@@ -6,7 +6,7 @@
  *
  */
 
-#include "tcp_client.hpp"
+#include <difi/tcp_client.hpp>
 
 #include <arpa/inet.h>
 #include <cerrno>

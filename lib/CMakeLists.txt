@@ -20,17 +20,11 @@ list(APPEND difi_sources
     tcp_client_legacy.cc
     udp_socket.h
     udp_socket.cc
-    transport.hpp
     transport.cpp
-    udp_server.hpp
     udp_server.cpp
-    udp_client.hpp
     udp_client.cpp
-    tcp_transport.hpp
     tcp_transport.cpp
-    tcp_server.hpp
     tcp_server.cpp
-    tcp_client.hpp
     tcp_client.cpp
     difi.cpp
 )

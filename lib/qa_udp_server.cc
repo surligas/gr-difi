@@ -7,7 +7,7 @@
  */
 
 #include "qa_transport_utils.hpp"
-#include "udp_server.hpp"
+#include <difi/udp_server.hpp>
 
 #include <boost/test/unit_test.hpp>
 #include <cerrno>

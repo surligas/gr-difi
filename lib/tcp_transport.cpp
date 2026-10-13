@@ -6,7 +6,7 @@
  *
  */
 
-#include "tcp_transport.hpp"
+#include <difi/tcp_transport.hpp>
 
 #include <arpa/inet.h>
 #include <cerrno>

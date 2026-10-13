@@ -6,7 +6,7 @@
  *
  */
 
-#include "udp_server.hpp"
+#include <difi/udp_server.hpp>
 
 #include <arpa/inet.h>
 #include <cerrno>

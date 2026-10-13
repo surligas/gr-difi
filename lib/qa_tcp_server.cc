@@ -7,7 +7,7 @@
  */
 
 #include "qa_transport_utils.hpp"
-#include "tcp_server.hpp"
+#include <difi/tcp_server.hpp>
 
 #include <boost/test/unit_test.hpp>
 #include <cerrno>
