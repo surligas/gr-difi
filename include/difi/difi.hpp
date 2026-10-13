@@ -23,6 +23,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <span>
 #include <string>
 #include <utility>
@@ -149,6 +150,58 @@ public:
     using difi_context = standard_context;
     using context_variant = std::variant<standard_context, alternative_context>;
     using difi_header = header;
+
+    // --- Byte-Order Serialization Helpers ---
+
+    /**
+     * @brief Serializes a 32-bit unsigned integer in network byte order (big-endian).
+     *
+     * @param ptr destination buffer (must have at least 4 bytes)
+     * @param val 32-bit value to serialize
+     */
+    static inline void pack_u32(void* ptr, uint32_t val)
+    {
+        uint32_t net = htonl(val);
+        std::memcpy(ptr, &net, sizeof(net));
+    }
+
+    /**
+     * @brief Serializes a 64-bit unsigned integer in network byte order (big-endian).
+     *
+     * @param ptr destination buffer (must have at least 8 bytes)
+     * @param val 64-bit value to serialize
+     */
+    static inline void pack_u64(void* ptr, uint64_t val)
+    {
+        uint64_t net = htobe64(val);
+        std::memcpy(ptr, &net, sizeof(net));
+    }
+
+    /**
+     * @brief Deserializes a 32-bit unsigned integer from network byte order (big-endian).
+     *
+     * @param ptr source buffer (must have at least 4 bytes)
+     * @return uint32_t host-order value
+     */
+    static inline uint32_t unpack_u32(const void* ptr)
+    {
+        uint32_t val;
+        std::memcpy(&val, ptr, sizeof(val));
+        return ntohl(val);
+    }
+
+    /**
+     * @brief Deserializes a 64-bit unsigned integer from network byte order (big-endian).
+     *
+     * @param ptr source buffer (must have at least 8 bytes)
+     * @return uint64_t host-order value
+     */
+    static inline uint64_t unpack_u64(const void* ptr)
+    {
+        uint64_t val;
+        std::memcpy(&val, ptr, sizeof(val));
+        return be64toh(val);
+    }
 
     // --- Fixed-Point Conversions ---
 
@@ -347,6 +400,60 @@ public:
      */
     static std::vector<uint8_t>
     pack_context(const context_variant& ctx, uint8_t pkt_n, uint32_t stream_id);
+
+    /**
+     * @brief Serializes a typed context packet into a destination byte span.
+     *
+     * @tparam V context version
+     * @param ctx context fields in engineering units
+     * @param pkt_n packet sequence number (0..15)
+     * @param stream_id stream identifier
+     * @param out destination byte span (must have at least context packet size bytes)
+     */
+    template <context_version V>
+    static void pack_context(const context<V>& ctx,
+                             uint8_t pkt_n,
+                             uint32_t stream_id,
+                             std::span<uint8_t> out);
+
+    /**
+     * @brief Serializes a standard context packet into a destination byte span.
+     *
+     * @param ctx standard context fields in engineering units
+     * @param pkt_n packet sequence number (0..15)
+     * @param stream_id stream identifier
+     * @param out destination byte span (must have at least STANDARD_CONTEXT_SIZE bytes)
+     */
+    static void pack_context(const standard_context& ctx,
+                             uint8_t pkt_n,
+                             uint32_t stream_id,
+                             std::span<uint8_t> out);
+
+    /**
+     * @brief Serializes an alternative context packet into a destination byte span.
+     *
+     * @param ctx alternative context fields in engineering units
+     * @param pkt_n packet sequence number (0..15)
+     * @param stream_id stream identifier
+     * @param out destination byte span (must have at least ALT_CONTEXT_SIZE bytes)
+     */
+    static void pack_context(const alternative_context& ctx,
+                             uint8_t pkt_n,
+                             uint32_t stream_id,
+                             std::span<uint8_t> out);
+
+    /**
+     * @brief Serializes a context packet variant into a destination byte span.
+     *
+     * @param ctx context variant (standard or alternative)
+     * @param pkt_n packet sequence number (0..15)
+     * @param stream_id stream identifier
+     * @param out destination byte span
+     */
+    static void pack_context(const context_variant& ctx,
+                             uint8_t pkt_n,
+                             uint32_t stream_id,
+                             std::span<uint8_t> out);
 
     /**
      * @brief Creates a default typed context packet for standalone sink mode.
@@ -669,5 +776,25 @@ using alternative_context = difi::alternative_context;
 using difi_context = difi::difi_context;
 using context_variant = difi::context_variant;
 using difi_handler = difi;
+
+inline void pack_u32(void* ptr, uint32_t val)
+{
+    difi::pack_u32(ptr, val);
+}
+
+inline void pack_u64(void* ptr, uint64_t val)
+{
+    difi::pack_u64(ptr, val);
+}
+
+inline uint32_t unpack_u32(const void* ptr)
+{
+    return difi::unpack_u32(ptr);
+}
+
+inline uint64_t unpack_u64(const void* ptr)
+{
+    return difi::unpack_u64(ptr);
+}
 
 } // namespace gr::difi

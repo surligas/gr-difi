@@ -18,32 +18,6 @@
 namespace gr {
   namespace difi {
 
-    u_int32_t unpack_u32(u_int8_t *start)
-    {
-      u_int32_t val;
-      memcpy(&val, start, sizeof(val));
-      return ntohl(val);
-    }
-    u_int64_t unpack_u64(u_int8_t *start)
-    {
-      u_int64_t val;
-      memcpy(&val, start, sizeof(val));
-      return be64toh(val);
-    }
-
-      u_int32_t unpack_u32(int8_t *start)
-    {
-      u_int32_t val;
-      memcpy(&val, start, sizeof(val));
-      return ntohl(val);
-    }
-    u_int64_t unpack_u64(int8_t *start)
-    {
-      u_int64_t val;
-      memcpy(&val, start, sizeof(val));
-      return be64toh(val);
-    }
-
     template <class T>
     typename difi_source_cpp<T>::sptr difi_source_cpp<T>::make(std::string ip_addr, uint32_t port, uint8_t socket_type, int stream_number, int bit_depth, int context_pkt_behavior)
     {

@@ -16,6 +16,33 @@
 
 using namespace gr::difi;
 
+BOOST_AUTO_TEST_CASE(t_byte_order_pack_unpack)
+{
+    uint8_t buf32[4] = {};
+    difi::pack_u32(buf32, 0x12345678);
+    BOOST_CHECK_EQUAL(buf32[0], 0x12);
+    BOOST_CHECK_EQUAL(buf32[1], 0x34);
+    BOOST_CHECK_EQUAL(buf32[2], 0x56);
+    BOOST_CHECK_EQUAL(buf32[3], 0x78);
+    BOOST_CHECK_EQUAL(difi::unpack_u32(buf32), 0x12345678U);
+
+    uint8_t buf64[8] = {};
+    difi::pack_u64(buf64, 0x0123456789abcdefULL);
+    BOOST_CHECK_EQUAL(buf64[0], 0x01);
+    BOOST_CHECK_EQUAL(buf64[1], 0x23);
+    BOOST_CHECK_EQUAL(buf64[2], 0x45);
+    BOOST_CHECK_EQUAL(buf64[3], 0x67);
+    BOOST_CHECK_EQUAL(buf64[4], 0x89);
+    BOOST_CHECK_EQUAL(buf64[5], 0xab);
+    BOOST_CHECK_EQUAL(buf64[6], 0xcd);
+    BOOST_CHECK_EQUAL(buf64[7], 0xef);
+    BOOST_CHECK_EQUAL(difi::unpack_u64(buf64), 0x0123456789abcdefULL);
+
+    int8_t sbuf32[4] = {};
+    difi::pack_u32(sbuf32, 0xaabbccddU);
+    BOOST_CHECK_EQUAL(difi::unpack_u32(sbuf32), 0xaabbccddU);
+}
+
 BOOST_AUTO_TEST_CASE(t_header_parse_and_pack)
 {
     difi_header h;
@@ -228,6 +255,48 @@ BOOST_AUTO_TEST_CASE(t_context_runtime_dispatch_and_variant)
 
     std::vector<uint8_t> packed_alt = difi::pack_context(var_alt, 2, stream_id);
     BOOST_CHECK_EQUAL(packed_alt.size(), difi::ALT_CONTEXT_SIZE);
+}
+
+BOOST_AUTO_TEST_CASE(t_context_span_pack)
+{
+    double samp_rate = 1000000.0;
+    uint32_t stream_id = 77;
+
+    // 1. Standard context span packing
+    standard_context std_ctx =
+        difi::make_default_context<context_version::standard>(samp_rate, 16, stream_id, 1234, 5678);
+    std::vector<uint8_t> span_buf_std(difi::STANDARD_CONTEXT_SIZE, 0);
+    difi::pack_context(std_ctx, 5, stream_id, std::span<uint8_t>(span_buf_std));
+
+    std::vector<uint8_t> vec_std = difi::pack_context(std_ctx, 5, stream_id);
+    BOOST_CHECK_EQUAL_COLLECTIONS(
+        span_buf_std.begin(), span_buf_std.end(), vec_std.begin(), vec_std.end());
+
+    // 2. Alternative context span packing
+    alternative_context alt_ctx =
+        difi::make_default_context<context_version::alternative>(samp_rate, 8, stream_id);
+    std::vector<uint8_t> span_buf_alt(difi::ALT_CONTEXT_SIZE, 0);
+    difi::pack_context(alt_ctx, 6, stream_id, std::span<uint8_t>(span_buf_alt));
+
+    std::vector<uint8_t> vec_alt = difi::pack_context(alt_ctx, 6, stream_id);
+    BOOST_CHECK_EQUAL_COLLECTIONS(
+        span_buf_alt.begin(), span_buf_alt.end(), vec_alt.begin(), vec_alt.end());
+
+    // 3. Variant span packing
+    context_variant var_std = std_ctx;
+    std::fill(span_buf_std.begin(), span_buf_std.end(), 0);
+    difi::pack_context(var_std, 5, stream_id, std::span<uint8_t>(span_buf_std));
+    BOOST_CHECK_EQUAL_COLLECTIONS(
+        span_buf_std.begin(), span_buf_std.end(), vec_std.begin(), vec_std.end());
+
+    // 4. Buffer too small throws std::invalid_argument
+    std::vector<uint8_t> small_std(difi::STANDARD_CONTEXT_SIZE - 1);
+    BOOST_CHECK_THROW(difi::pack_context(std_ctx, 1, stream_id, std::span<uint8_t>(small_std)),
+                      std::invalid_argument);
+
+    std::vector<uint8_t> small_alt(difi::ALT_CONTEXT_SIZE - 1);
+    BOOST_CHECK_THROW(difi::pack_context(alt_ctx, 1, stream_id, std::span<uint8_t>(small_alt)),
+                      std::invalid_argument);
 }
 
 BOOST_AUTO_TEST_CASE(t_sample_packing_and_unpacking_16bit)

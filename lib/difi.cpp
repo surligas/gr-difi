@@ -62,23 +62,11 @@ difi::header difi::parse_header(const void* buf, size_t len)
 
     const uint8_t* in = static_cast<const uint8_t*>(buf);
 
-    uint32_t w0 = 0;
-    uint32_t w1 = 0;
-    uint64_t cid = 0;
-    uint32_t full = 0;
-    uint64_t frac = 0;
-
-    std::memcpy(&w0, in, 4);
-    std::memcpy(&w1, in + 4, 4);
-    std::memcpy(&cid, in + 8, 8);
-    std::memcpy(&full, in + 16, 4);
-    std::memcpy(&frac, in + 20, 8);
-
-    w0 = ntohl(w0);
-    w1 = ntohl(w1);
-    cid = be64toh(cid);
-    full = ntohl(full);
-    frac = be64toh(frac);
+    uint32_t w0 = unpack_u32(in);
+    uint32_t w1 = unpack_u32(in + 4);
+    uint64_t cid = unpack_u64(in + 8);
+    uint32_t full = unpack_u32(in + 16);
+    uint64_t frac = unpack_u64(in + 20);
 
     header h;
     uint8_t type_val = static_cast<uint8_t>(w0 >> 28);
@@ -135,46 +123,12 @@ void difi::pack_header(void* buf, const header& header)
              (static_cast<uint32_t>(header.packet_size_words) & 0xffff);
     }
 
-    uint32_t net_w0 = htonl(w0);
-    uint32_t net_w1 = htonl(header.stream_id);
-    uint64_t net_cid = htobe64(header.class_id);
-    uint32_t net_full = htonl(header.full);
-    uint64_t net_frac = htobe64(header.frac);
-
-    std::memcpy(out, &net_w0, 4);
-    std::memcpy(out + 4, &net_w1, 4);
-    std::memcpy(out + 8, &net_cid, 8);
-    std::memcpy(out + 16, &net_full, 4);
-    std::memcpy(out + 20, &net_frac, 8);
+    pack_u32(out, w0);
+    pack_u32(out + 4, header.stream_id);
+    pack_u64(out + 8, header.class_id);
+    pack_u32(out + 16, header.full);
+    pack_u64(out + 20, header.frac);
 }
-
-namespace {
-inline uint32_t unpack_u32(const uint8_t* ptr)
-{
-    uint32_t val;
-    std::memcpy(&val, ptr, 4);
-    return ntohl(val);
-}
-
-inline uint64_t unpack_u64(const uint8_t* ptr)
-{
-    uint64_t val;
-    std::memcpy(&val, ptr, 8);
-    return be64toh(val);
-}
-
-inline void pack_u32(uint8_t* ptr, uint32_t val)
-{
-    uint32_t net = htonl(val);
-    std::memcpy(ptr, &net, 4);
-}
-
-inline void pack_u64(uint8_t* ptr, uint64_t val)
-{
-    uint64_t net = htobe64(val);
-    std::memcpy(ptr, &net, 8);
-}
-} // namespace
 
 template <>
 difi::standard_context
@@ -267,14 +221,21 @@ difi::context_variant difi::parse_context(const void* buf, size_t len)
 }
 
 template <>
-std::vector<uint8_t> difi::pack_context<difi::context_version::standard>(
-    const standard_context& ctx, uint8_t pkt_n, uint32_t stream_id, size_t packet_size)
+void difi::pack_context<difi::context_version::standard>(
+    const standard_context& ctx, uint8_t pkt_n, uint32_t stream_id, std::span<uint8_t> out)
 {
-    std::vector<uint8_t> out(packet_size, 0);
+    if (out.size() < STANDARD_CONTEXT_SIZE) {
+        throw std::invalid_argument(
+            "Destination span size (" + std::to_string(out.size()) +
+            ") is smaller than standard context size (" +
+            std::to_string(STANDARD_CONTEXT_SIZE) + ")");
+    }
+
+    std::fill(out.begin(), out.end(), 0);
 
     uint32_t header = STANDARD_CONTEXT_STATIC_BITS |
                       (static_cast<uint32_t>(pkt_n & 0x0f) << 16) |
-                      static_cast<uint32_t>(packet_size / 4);
+                      static_cast<uint32_t>(out.size() / 4);
 
     pack_u32(&out[0], header);
     pack_u32(&out[4], stream_id);
@@ -310,19 +271,24 @@ std::vector<uint8_t> difi::pack_context<difi::context_version::standard>(
                  ? ctx.state_and_event_indicators
                  : static_cast<uint32_t>(DEFAULT_STATE_AND_EVENTS));
     pack_u64(&out[CONTEXT_PACKET_OFFSETS[idx++]], ctx.payload_format);
-
-    return out;
 }
 
 template <>
-std::vector<uint8_t> difi::pack_context<difi::context_version::alternative>(
-    const alternative_context& ctx, uint8_t pkt_n, uint32_t stream_id, size_t packet_size)
+void difi::pack_context<difi::context_version::alternative>(
+    const alternative_context& ctx, uint8_t pkt_n, uint32_t stream_id, std::span<uint8_t> out)
 {
-    std::vector<uint8_t> out(packet_size, 0);
+    if (out.size() < ALT_CONTEXT_SIZE) {
+        throw std::invalid_argument(
+            "Destination span size (" + std::to_string(out.size()) +
+            ") is smaller than alternative context size (" +
+            std::to_string(ALT_CONTEXT_SIZE) + ")");
+    }
+
+    std::fill(out.begin(), out.end(), 0);
 
     uint32_t header = ALT_CONTEXT_STATIC_BITS |
                       (static_cast<uint32_t>(pkt_n & 0x0f) << 16) |
-                      static_cast<uint32_t>(packet_size / 4);
+                      static_cast<uint32_t>(out.size() / 4);
 
     pack_u32(&out[0], header);
     pack_u32(&out[4], stream_id);
@@ -346,7 +312,47 @@ std::vector<uint8_t> difi::pack_context<difi::context_version::alternative>(
                  ? ctx.state_and_event_indicators
                  : static_cast<uint32_t>(DEFAULT_STATE_AND_EVENTS));
     pack_u64(&out[CONTEXT_PACKET_ALT_OFFSETS[idx++]], ctx.payload_format);
+}
 
+void difi::pack_context(const standard_context& ctx,
+                        uint8_t pkt_n,
+                        uint32_t stream_id,
+                        std::span<uint8_t> out)
+{
+    pack_context<context_version::standard>(ctx, pkt_n, stream_id, out);
+}
+
+void difi::pack_context(const alternative_context& ctx,
+                        uint8_t pkt_n,
+                        uint32_t stream_id,
+                        std::span<uint8_t> out)
+{
+    pack_context<context_version::alternative>(ctx, pkt_n, stream_id, out);
+}
+
+void difi::pack_context(const context_variant& ctx,
+                        uint8_t pkt_n,
+                        uint32_t stream_id,
+                        std::span<uint8_t> out)
+{
+    std::visit([&](const auto& c) { pack_context(c, pkt_n, stream_id, out); }, ctx);
+}
+
+template <>
+std::vector<uint8_t> difi::pack_context<difi::context_version::standard>(
+    const standard_context& ctx, uint8_t pkt_n, uint32_t stream_id, size_t packet_size)
+{
+    std::vector<uint8_t> out(packet_size, 0);
+    pack_context<context_version::standard>(ctx, pkt_n, stream_id, std::span<uint8_t>(out));
+    return out;
+}
+
+template <>
+std::vector<uint8_t> difi::pack_context<difi::context_version::alternative>(
+    const alternative_context& ctx, uint8_t pkt_n, uint32_t stream_id, size_t packet_size)
+{
+    std::vector<uint8_t> out(packet_size, 0);
+    pack_context<context_version::alternative>(ctx, pkt_n, stream_id, std::span<uint8_t>(out));
     return out;
 }
 
