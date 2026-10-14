@@ -33,12 +33,12 @@ namespace gr {
         int context_interval,
         uint32_t reference_time_full,
         uint64_t reference_time_frac,
-        bool burst_mode,
+        const std::string& length_tag_name,
         uint32_t lead_time_us)
     {
       return gnuradio::make_block_sptr<difi_sink_cpp_impl<V, Transport, BitDepth>>(
           ip_addr, port, samp_rate, samples_per_packet, stream_number, context_interval,
-          reference_time_full, reference_time_frac, burst_mode, lead_time_us);
+          reference_time_full, reference_time_frac, length_tag_name, lead_time_us);
     }
 
     template <
@@ -56,7 +56,7 @@ namespace gr {
         int context_interval,
         uint32_t reference_time_full,
         uint64_t reference_time_frac,
-        bool burst_mode,
+        const std::string& length_tag_name,
         uint32_t lead_time_us)
       : gr::sync_block("difi_sink_cpp_impl",
               gr::io_signature::make(1, 1, sizeof(sample_t)),
@@ -77,12 +77,9 @@ namespace gr {
         GR_LOG_ERROR(this->d_logger, "samples per packet cannot be less than 2, (to ensure one 32 bit word is filled)");
         throw std::runtime_error("samples per packet cannot be less than 2, (to ensure one 32 bit word is filled)");
       }
-      d_tx_sob_key = pmt::intern("tx_sob");
-      d_tx_eob_key = pmt::intern("tx_eob");
-      d_packet_len_key = pmt::intern("packet_len");
+      m_length_tag_name = length_tag_name;
+      m_length_tag_key = length_tag_name.empty() ? pmt::PMT_NIL : pmt::intern(length_tag_name);
       d_tx_time_key = pmt::intern("tx_time");
-      d_burst_mode = burst_mode;
-      d_in_burst = false;
       d_burst_samples_remaining = 0;
       d_lead_time_us = lead_time_us;
       d_full = reference_time_full;
@@ -185,17 +182,9 @@ namespace gr {
 
         while (tag_idx < tags.size() && tags[tag_idx].offset == current_offset) {
           const auto &tag = tags[tag_idx];
-          if (pmt::eqv(d_tx_sob_key, tag.key)) {
-            d_burst_mode = true;
-            d_in_burst = true;
-            burst_started_here = true;
-          } else if (pmt::eqv(d_packet_len_key, tag.key)) {
-            d_burst_mode = true;
-            d_in_burst = true;
-            burst_started_here = true;
+          if (!m_length_tag_name.empty() && pmt::eqv(m_length_tag_key, tag.key)) {
             d_burst_samples_remaining = pmt::to_uint64(tag.value);
-          } else if (pmt::eqv(d_tx_eob_key, tag.key)) {
-            burst_ended_here = true;
+            burst_started_here = true;
           } else if (pmt::eqv(d_tx_time_key, tag.key)) {
             if (pmt::is_tuple(tag.value) && pmt::length(tag.value) >= 2) {
               d_full = static_cast<uint32_t>(pmt::to_uint64(pmt::tuple_ref(tag.value, 0)));
@@ -212,7 +201,7 @@ namespace gr {
         }
 
         // Drop/skip idle samples when burst mode is active
-        if (d_burst_mode && !d_in_burst && d_burst_samples_remaining == 0) {
+        if (!m_length_tag_name.empty() && d_burst_samples_remaining == 0) {
           continue;
         }
 
@@ -245,7 +234,6 @@ namespace gr {
 
         if (burst_ended_here) {
           flush_current_packet();
-          d_in_burst = false;
         }
       }
       return noutput_items;

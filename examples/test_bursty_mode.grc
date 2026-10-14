@@ -83,11 +83,12 @@ blocks:
     affinity: ''
     alias: ''
     bit_depth: '8'
-    burst_mode: 'True'
     comment: ''
     context_pack_size: '108'
     context_packet_send_count: '1000'
     data_size: '672'
+    length_tag_name: packet_len
+    mode: burst
     gain: '1.0'
     ip_addr: 127.0.0.1
     lead_time_us: '10000'

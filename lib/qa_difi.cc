@@ -583,5 +583,21 @@ BOOST_AUTO_TEST_CASE(t_difi_sink_template_instantiations)
     auto sink_sc8 = difi_sink_cpp<difi::context_version::standard, udp_client, difi::bit_depth::bits_8>::make(
         "127.0.0.1", 5003, 1000000, 512);
     BOOST_REQUIRE(sink_sc8 != nullptr);
+
+    // Streaming mode (default length_tag_name is empty)
+    BOOST_CHECK_EQUAL(sink_default->burst_mode(), false);
+    BOOST_CHECK_EQUAL(sink_default->length_tag_name(), "");
+
+    // Burst mode with explicit length_tag_name
+    auto sink_burst = difi_sink_cpp<>::make(
+        "127.0.0.1", 5004, 1000000, 512, 0, 100, 0, 0, "packet_len", 5000);
+    BOOST_REQUIRE(sink_burst != nullptr);
+    BOOST_CHECK_EQUAL(sink_burst->burst_mode(), true);
+    BOOST_CHECK_EQUAL(sink_burst->length_tag_name(), "packet_len");
+    BOOST_CHECK_EQUAL(sink_burst->lead_time_us(), 5000);
+
+    sink_burst->set_length_tag_name("");
+    BOOST_CHECK_EQUAL(sink_burst->burst_mode(), false);
+    BOOST_CHECK_EQUAL(sink_burst->length_tag_name(), "");
 }
 

@@ -60,12 +60,9 @@ namespace gr {
 
         int d_stream_number;
         uint32_t d_full_samp;
-        pmt::pmt_t d_tx_sob_key;
-        pmt::pmt_t d_tx_eob_key;
-        pmt::pmt_t d_packet_len_key;
+        std::string m_length_tag_name;
+        pmt::pmt_t m_length_tag_key;
         pmt::pmt_t d_tx_time_key;
-        bool d_burst_mode;
-        bool d_in_burst;
         uint64_t d_burst_samples_remaining;
         uint32_t d_lead_time_us;
         uint32_t d_full;
@@ -86,7 +83,7 @@ namespace gr {
                         uint32_t samples_per_packet, int stream_number = 0,
                         int context_interval = 100, uint32_t reference_time_full = 0,
                         uint64_t reference_time_frac = 0,
-                        bool burst_mode = false, uint32_t lead_time_us = 10000);
+                        const std::string& length_tag_name = "", uint32_t lead_time_us = 10000);
       ~difi_sink_cpp_impl() override = default;
 
       // Where all the action really happens
@@ -96,8 +93,12 @@ namespace gr {
               gr_vector_void_star &output_items
       ) override;
 
-      void set_burst_mode(bool enable) override { d_burst_mode = enable; }
-      bool burst_mode() const override { return d_burst_mode; }
+      void set_length_tag_name(const std::string& tag_name) override {
+        m_length_tag_name = tag_name;
+        m_length_tag_key = tag_name.empty() ? pmt::PMT_NIL : pmt::intern(tag_name);
+      }
+      std::string length_tag_name() const override { return m_length_tag_name; }
+      bool burst_mode() const override { return !m_length_tag_name.empty(); }
       void set_lead_time_us(uint32_t lead_time_us) override { d_lead_time_us = lead_time_us; }
       uint32_t lead_time_us() const override { return d_lead_time_us; }
 

@@ -63,7 +63,7 @@ void bind_difi_sink_cpp(py::module& m)
         int context_interval,
         uint32_t reference_time_full,
         uint64_t reference_time_frac,
-        bool burst_mode,
+        std::string length_tag_name,
         uint32_t lead_time_us,
         int context_version_int,
         uint8_t protocol,
@@ -77,33 +77,33 @@ void bind_difi_sink_cpp(py::module& m)
             if (is_tcp) {
                 if (is_8bit) return difi_sink_cpp<difi::context_version::alternative, tcp_client, difi::bit_depth::bits_8>::make(
                     ip_addr, port, samp_rate, samples_per_packet, stream_number, context_interval,
-                    reference_time_full, reference_time_frac, burst_mode, lead_time_us);
+                    reference_time_full, reference_time_frac, length_tag_name, lead_time_us);
                 else return difi_sink_cpp<difi::context_version::alternative, tcp_client, difi::bit_depth::bits_16>::make(
                     ip_addr, port, samp_rate, samples_per_packet, stream_number, context_interval,
-                    reference_time_full, reference_time_frac, burst_mode, lead_time_us);
+                    reference_time_full, reference_time_frac, length_tag_name, lead_time_us);
             } else {
                 if (is_8bit) return difi_sink_cpp<difi::context_version::alternative, udp_client, difi::bit_depth::bits_8>::make(
                     ip_addr, port, samp_rate, samples_per_packet, stream_number, context_interval,
-                    reference_time_full, reference_time_frac, burst_mode, lead_time_us);
+                    reference_time_full, reference_time_frac, length_tag_name, lead_time_us);
                 else return difi_sink_cpp<difi::context_version::alternative, udp_client, difi::bit_depth::bits_16>::make(
                     ip_addr, port, samp_rate, samples_per_packet, stream_number, context_interval,
-                    reference_time_full, reference_time_frac, burst_mode, lead_time_us);
+                    reference_time_full, reference_time_frac, length_tag_name, lead_time_us);
             }
         } else {
             if (is_tcp) {
                 if (is_8bit) return difi_sink_cpp<difi::context_version::standard, tcp_client, difi::bit_depth::bits_8>::make(
                     ip_addr, port, samp_rate, samples_per_packet, stream_number, context_interval,
-                    reference_time_full, reference_time_frac, burst_mode, lead_time_us);
+                    reference_time_full, reference_time_frac, length_tag_name, lead_time_us);
                 else return difi_sink_cpp<difi::context_version::standard, tcp_client, difi::bit_depth::bits_16>::make(
                     ip_addr, port, samp_rate, samples_per_packet, stream_number, context_interval,
-                    reference_time_full, reference_time_frac, burst_mode, lead_time_us);
+                    reference_time_full, reference_time_frac, length_tag_name, lead_time_us);
             } else {
                 if (is_8bit) return difi_sink_cpp<difi::context_version::standard, udp_client, difi::bit_depth::bits_8>::make(
                     ip_addr, port, samp_rate, samples_per_packet, stream_number, context_interval,
-                    reference_time_full, reference_time_frac, burst_mode, lead_time_us);
+                    reference_time_full, reference_time_frac, length_tag_name, lead_time_us);
                 else return difi_sink_cpp<difi::context_version::standard, udp_client, difi::bit_depth::bits_16>::make(
                     ip_addr, port, samp_rate, samples_per_packet, stream_number, context_interval,
-                    reference_time_full, reference_time_frac, burst_mode, lead_time_us);
+                    reference_time_full, reference_time_frac, length_tag_name, lead_time_us);
             }
         }
     };
@@ -117,14 +117,14 @@ void bind_difi_sink_cpp(py::module& m)
         int context_interval,
         uint32_t reference_time_full,
         uint64_t reference_time_frac,
-        bool burst_mode,
+        std::string length_tag_name,
         uint32_t lead_time_us,
         int context_version_int,
         uint8_t protocol
     ) {
         return make_dispatch(ip_addr, port, samp_rate, samples_per_packet,
                              stream_number, context_interval, reference_time_full,
-                             reference_time_frac, burst_mode, lead_time_us,
+                             reference_time_frac, length_tag_name, lead_time_us,
                              context_version_int, protocol, 8);
     };
 
@@ -137,14 +137,14 @@ void bind_difi_sink_cpp(py::module& m)
         int context_interval,
         uint32_t reference_time_full,
         uint64_t reference_time_frac,
-        bool burst_mode,
+        std::string length_tag_name,
         uint32_t lead_time_us,
         int context_version_int,
         uint8_t protocol
     ) {
         return make_dispatch(ip_addr, port, samp_rate, samples_per_packet,
                              stream_number, context_interval, reference_time_full,
-                             reference_time_frac, burst_mode, lead_time_us,
+                             reference_time_frac, length_tag_name, lead_time_us,
                              context_version_int, protocol, 16);
     };
 
@@ -159,7 +159,7 @@ void bind_difi_sink_cpp(py::module& m)
            py::arg("context_interval") = 100,
            py::arg("reference_time_full") = 0,
            py::arg("reference_time_frac") = 0,
-           py::arg("burst_mode") = false,
+           py::arg("length_tag_name") = "",
            py::arg("lead_time_us") = 10000,
            py::arg("context_version") = 108,
            py::arg("protocol") = 2,
@@ -174,13 +174,14 @@ void bind_difi_sink_cpp(py::module& m)
            py::arg("context_interval") = 100,
            py::arg("reference_time_full") = 0,
            py::arg("reference_time_frac") = 0,
-           py::arg("burst_mode") = false,
+           py::arg("length_tag_name") = "",
            py::arg("lead_time_us") = 10000,
            py::arg("context_version") = 108,
            py::arg("protocol") = 2,
            py::arg("bit_depth") = 16
         )
-        .def("set_burst_mode", &difi_sink_base::set_burst_mode, py::arg("enable"))
+        .def("set_length_tag_name", &difi_sink_base::set_length_tag_name, py::arg("tag_name"))
+        .def("length_tag_name", &difi_sink_base::length_tag_name)
         .def("burst_mode", &difi_sink_base::burst_mode)
         .def("set_lead_time_us", &difi_sink_base::set_lead_time_us, py::arg("lead_time_us"))
         .def("lead_time_us", &difi_sink_base::lead_time_us)
@@ -196,7 +197,7 @@ void bind_difi_sink_cpp(py::module& m)
        py::arg("context_interval") = 100,
        py::arg("reference_time_full") = 0,
        py::arg("reference_time_frac") = 0,
-       py::arg("burst_mode") = false,
+       py::arg("length_tag_name") = "",
        py::arg("lead_time_us") = 10000,
        py::arg("context_version") = 108,
        py::arg("protocol") = 2,
@@ -212,7 +213,7 @@ void bind_difi_sink_cpp(py::module& m)
        py::arg("context_interval") = 100,
        py::arg("reference_time_full") = 0,
        py::arg("reference_time_frac") = 0,
-       py::arg("burst_mode") = false,
+       py::arg("length_tag_name") = "",
        py::arg("lead_time_us") = 10000,
        py::arg("context_version") = 108,
        py::arg("protocol") = 2
@@ -227,7 +228,7 @@ void bind_difi_sink_cpp(py::module& m)
        py::arg("context_interval") = 100,
        py::arg("reference_time_full") = 0,
        py::arg("reference_time_frac") = 0,
-       py::arg("burst_mode") = false,
+       py::arg("length_tag_name") = "",
        py::arg("lead_time_us") = 10000,
        py::arg("context_version") = 108,
        py::arg("protocol") = 2

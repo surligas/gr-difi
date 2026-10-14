@@ -851,9 +851,10 @@ class qa_testcpp(gr_unittest.TestCase):
         vita_sink = difi_sink_cpp_sc8(
             '127.0.0.1', sink_p, int(1e6), samples_per_pkt,
             context_interval=1000, context_version=108,
-            burst_mode=True, lead_time_us=5000, protocol=socket.SOCK_DGRAM
+            length_tag_name="packet_len", lead_time_us=5000, protocol=socket.SOCK_DGRAM
         )
         assert vita_sink.burst_mode() is True
+        assert vita_sink.length_tag_name() == "packet_len"
         assert vita_sink.lead_time_us() == 5000
 
         burst1 = [1, 1] * 50

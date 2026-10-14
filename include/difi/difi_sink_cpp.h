@@ -55,7 +55,8 @@ namespace gr {
       typedef std::shared_ptr<difi_sink_base> sptr;
       virtual ~difi_sink_base() = default;
 
-      virtual void set_burst_mode(bool enable) = 0;
+      virtual void set_length_tag_name(const std::string& tag_name) = 0;
+      virtual std::string length_tag_name() const = 0;
       virtual bool burst_mode() const = 0;
       virtual void set_lead_time_us(uint32_t lead_time_us) = 0;
       virtual uint32_t lead_time_us() const = 0;
@@ -97,7 +98,7 @@ namespace gr {
           int context_interval = 100,
           uint32_t reference_time_full = 0,
           uint64_t reference_time_frac = 0,
-          bool burst_mode = false,
+          const std::string& length_tag_name = "",
           uint32_t lead_time_us = 10000);
     };
 
