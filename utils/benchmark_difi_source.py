@@ -25,12 +25,13 @@ class DifiSinkFlowgraph(gr.top_block):
     def __init__(self, samples_per_packet, port):
         gr.top_block.__init__(self, "Not titled yet", catch_exceptions=True)
         samp_rate = 1e5  # mainly just impacts throttle, if there are warnings before the TX portion then this number is too high
-        self.difi_sink = difi.difi_sink_cpp_fc32(0, 0, '127.0.0.1', port, bool(
-            False), samples_per_packet, 0, int(352), int(samp_rate), int(0), 0, 1000, int(72), int(8), int(2), 127, 0, 1.0, -1.0)
+        self.difi_sink = difi.difi_sink_cpp_sc8('127.0.0.1', port, int(samp_rate), samples_per_packet)
         self.sig_source = analog.sig_source_c(samp_rate, analog.GR_SIN_WAVE, 1000, 0.5, 0, 0)
         self.throttle = blocks.throttle(gr.sizeof_gr_complex*1, samp_rate, True)
+        self.cic = blocks.complex_to_interleaved_char(True)
         self.connect(self.sig_source, self.throttle)
-        self.connect(self.throttle, self.difi_sink)
+        self.connect(self.throttle, self.cic)
+        self.connect(self.cic, self.difi_sink)
 
 # DIFI Source (receive side) flowgraph
 class DifiSourceFlowgraph(gr.top_block):

@@ -46,10 +46,16 @@ GR_PYTHON_INSTALL(
     __init__.py DESTINATION ${GR_PYTHON_DIR}/difi
 )
 
+add_custom_target(
+    copy_module_for_tests ALL
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_BINARY_DIR}/test_modules/difi
+    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/__init__.py
+            ${PROJECT_BINARY_DIR}/test_modules/difi/)
+
 ########################################################################
 # Handle the unit tests
 ########################################################################
 include(GrTest)
 
-set(GR_TEST_TARGET_DEPS gnuradio-difi)
+set(GR_TEST_TARGET_DEPS gnuradio-difi copy_module_for_tests)
 GR_ADD_TEST(qa_difi_blocks_cpp ${PYTHON_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/qa_difi_blocks_cpp.py)

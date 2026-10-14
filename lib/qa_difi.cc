@@ -9,6 +9,7 @@
 #define BOOST_TEST_MODULE qa_difi
 
 #include <difi/difi.hpp>
+#include <difi/difi_sink_cpp.h>
 #include <boost/test/unit_test.hpp>
 #include <cmath>
 #include <span>
@@ -556,3 +557,31 @@ BOOST_AUTO_TEST_CASE(t_pmt_conversions)
                           pkt_dict, pmt::intern("data_len"), pmt::get_PMT_NIL())),
                       1400);
 }
+
+BOOST_AUTO_TEST_CASE(t_difi_sink_template_instantiations)
+{
+    // Default: standard, udp_client, 16-bit
+    auto sink_default = difi_sink_cpp<>::make(
+        "127.0.0.1", 5000, 1000000, 512);
+    BOOST_REQUIRE(sink_default != nullptr);
+    auto ctx_default = sink_default->context();
+    BOOST_CHECK_EQUAL(std::get<standard_context>(ctx_default).packet_size, 108);
+
+    // Alternative context, UDP, 16-bit
+    auto sink_alt_udp = difi_sink_cpp<difi::context_version::alternative, udp_client, difi::bit_depth::bits_16>::make(
+        "127.0.0.1", 5001, 2000000, 256);
+    BOOST_REQUIRE(sink_alt_udp != nullptr);
+    auto ctx_alt = sink_alt_udp->context();
+    BOOST_CHECK_EQUAL(std::get<alternative_context>(ctx_alt).packet_size, 72);
+
+    // Standard context, TCP, 8-bit
+    auto sink_std_tcp_8 = difi_sink_cpp<difi::context_version::standard, tcp_client, difi::bit_depth::bits_8>::make(
+        "127.0.0.1", 5002, 1000000, 512);
+    BOOST_REQUIRE(sink_std_tcp_8 != nullptr);
+
+    // Standard context, UDP, 8-bit
+    auto sink_sc8 = difi_sink_cpp<difi::context_version::standard, udp_client, difi::bit_depth::bits_8>::make(
+        "127.0.0.1", 5003, 1000000, 512);
+    BOOST_REQUIRE(sink_sc8 != nullptr);
+}
+

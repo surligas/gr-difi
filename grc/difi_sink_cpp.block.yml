@@ -8,18 +8,15 @@ label: DIFI Sink
 category: '[DIFI]'
 templates:
   imports: import difi
-  make: difi.difi_sink_cpp_${type.fcn}(${reference_time_full}, ${reference_time_frac}, ${ip_addr}, ${port}, ${protocol}, bool(${mode}),
-                                                       ${data_size}, ${stream_id}, ${sample_rate},
-                                                       ${context_packet_send_count}, int(${context_pack_size}), int(${bit_depth}), int(${scaling}), ${gain},
-                                                       ${offset}, ${max_iq}, ${min_iq}, bool(${burst_mode}), int(${lead_time_us}))
+  make: difi.difi_sink_cpp_${ 'sc8' if bit_depth == '8' else 'sc16' }(${ip_addr}, ${port}, ${sample_rate}, ${data_size}, ${stream_id}, ${context_packet_send_count}, ${reference_time_full}, ${reference_time_frac}, bool(${burst_mode}), int(${lead_time_us}), int(${context_pack_size}), int(${protocol}))
 
 parameters:
-- id: type
-  label: IO Type
+- id: bit_depth
+  label: Bit Depth
   dtype: enum
-  options: [complex, complex8]
-  option_attributes:
-      fcn: [fc32, sc8]
+  options: ['8', '16']
+  option_labels: ['8-bit (Complex Byte)', '16-bit (Complex Short)']
+  default: '16'
 - id: burst_mode
   label: Burst Mode
   dtype: enum
@@ -31,16 +28,6 @@ parameters:
   dtype: int
   default: 10000
   hide: ${ ('none' if burst_mode == 'True' else 'all') }
-- id: mode
-  label: Mode
-  dtype: enum
-  options: ['False', 'True']
-  option_labels: ['Standalone', 'Paired']
-- id: bit_depth
-  label: Bit Depth
-  dtype: enum
-  options: ['8', '16']
-  default: '8'
 - id: ip_addr
   label: Forwarding IP Address
   dtype: string
@@ -75,113 +62,28 @@ parameters:
   label: Stream ID
   dtype: int
   default: 80000
-  hide: ${ ('all' if mode == 'True' else 'none') }
 - id: context_packet_send_count
   label: Context packet interval
   dtype: int
   default: 1000
-  hide: ${ ('all' if mode == 'True' else 'none') }
 - id: context_pack_size
-  label: The context packet size in bytes
+  label: Context Packet Type
   dtype: enum
-  options: ['72', '108']
+  options: ['108', '72']
+  option_labels: ['Standard (108 bytes)', 'Alternative (72 bytes)']
   default: '108'
-  hide: ${ ('all' if mode == 'True' else 'none') }
-- id: scaling
-  category: Scaling
-  label: Scaling Mode
-  dtype: enum
-  options: ['0', '1', '2']
-  option_labels: ['None', 'Manual', 'Min-Max']
-  default: '2'
-- id: gain
-  category: Scaling
-  label: Gain
-  dtype: real
-  default: 1.0
-  hide: ${ ('none' if scaling == '1' else 'all') }
-- id: offset
-  category: Scaling
-  label: Complex Offset
-  dtype: complex
-  default: 0
-  hide: ${ ('none' if scaling == '1' else 'all') }
-- id: max_iq
-  category: Scaling
-  label: Max IQ Value
-  dtype: real
-  default: 1.0
-  hide: ${ ('none' if scaling == '2' else 'all') }
-- id: min_iq
-  category: Scaling
-  label: Min IQ Value
-  dtype: real
-  default: -1.0
-  hide: ${ ('none' if scaling == '2' else 'all') }
+
 inputs:
 - label: in
   domain: stream
-  dtype: ${type.fcn}
-
-asserts:
-- ${ bit_depth == '8' if type.fcn == 'sc8' else True }
+  dtype: ${ 'sc8' if bit_depth == '8' else 'sc16' }
 
 documentation: |-
-     A DIFI sink block is based on ISTO Std 4900-2021: Digital IF Interoperability Standard
-     The block is not fully compliant just yet. Bit Depths supported are currently 8 and 16 with full support coming at a later date.
-     Note, this block will causes quantization error if using with gr_complex since it will convert from float 32 I and Q to the bit_depth I and Q
+     A DIFI sink block based on IEEE-ISTO Std 4900-2021 (Digital IF Interoperability Standard).
+     Transmits complex integer samples over UDP or TCP network sockets.
 
-     ===Params===
-
-     reference_time_full:
-     The initial reference time in seconds for the DIFI (VITA) data packets until a timing tag is received via pkt_n tag or a context packet tag. The time reference will never be updated if in standalone mode.
-
-     reference_time_frac:
-     The fractional initial reference time in picoseconds for the DIFI (VITA) data packets until a timing tag is received via pkt_n tag or a context packet tag. The time reference will never be updated if in standalone mode.
-
-     ip_addr:
-     The ip address for the socket that DIFI (VITA) packets will be forwared to
-
-     port:
-     The port number for the socket on the host that the DIFI (VITA) packets will be forwared to
-
-     protocol:
-     The socket protocol to use UDP or TCP
-
-     mode:
-     Either standalone or paired. Paired mode is expected to have a DIFI (VITA) source block upstream in the flowgraph (on a different port), standalone expects no such block, but context packet information must be given
-
-     samples_per_packet:
-     The number of samples for DIFI (VITA) data packet (header included) that this block with send out via the udp socket (Cannot exceed the MTU size in bytes)
-
-     stream_number:
-     The DIFI (VITA) stream number to expect for this stream.
-
-     samp_rate:
-     The sample rate
-
-     context_interval:
-     The number of data packets to send before sending the next context packet
-
-     context_pack_size:
-     The size of the context packet, either 72 or 108 (Which are supported by MS Spec)
-
-     bit_depth:
-     The bit depth
-
-     scaling:
-     The scaling mode
-
-     gain:
-     In manual scaling mode, gain applied to signal
-
-     offset:
-     In manual scaling mode, complex offset added to signal
-
-     max_iq:
-     In Min-Max scaling mode, expectd maximum value of I or Q ie. Max(Max(I),Max(Q))
-
-     min_iq:
-     In Min-Max scaling mode, expectd minimum value of I or Q ie. Min(Min(I),Min(Q))
+     Input types:
+     - 8-bit depth: Complex Byte (sc8, interleaved chars)
+     - 16-bit depth: Complex Short (sc16, interleaved shorts)
 
 file_format: 1

@@ -257,7 +257,6 @@ blocks:
     ip_addr: 127.0.0.1
     max_iq: '127'
     min_iq: '-127'
-    mode: 'False'
     offset: '0'
     port: '50003'
     protocol: '2'

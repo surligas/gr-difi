@@ -37,4 +37,11 @@ GR_PYBIND_MAKE_OOT(difi
    gr::difi
    "${difi_python_files}")
 
+add_custom_command(
+    TARGET difi_python
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${PROJECT_BINARY_DIR}/test_modules/difi
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:difi_python>
+            ${PROJECT_BINARY_DIR}/test_modules/difi/)
+
 install(TARGETS difi_python DESTINATION ${GR_PYTHON_DIR}/difi COMPONENT pythonapi)
