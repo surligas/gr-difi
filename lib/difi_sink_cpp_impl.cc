@@ -29,7 +29,14 @@ difi_sink_cpp<V, Transport, BitDepth>::make(std::string ip_addr,
                                             uint32_t reference_time_full,
                                             uint64_t reference_time_frac,
                                             const std::string& length_tag_name,
-                                            uint32_t lead_time_us)
+                                            uint32_t lead_time_us,
+                                            double rf_freq,
+                                            double if_freq,
+                                            double bandwidth,
+                                            float rf_gain,
+                                            float if_gain,
+                                            float ref_level,
+                                            double if_band_offset)
 {
     return gnuradio::make_block_sptr<difi_sink_cpp_impl<V, Transport, BitDepth>>(
         ip_addr,
@@ -41,7 +48,14 @@ difi_sink_cpp<V, Transport, BitDepth>::make(std::string ip_addr,
         reference_time_full,
         reference_time_frac,
         length_tag_name,
-        lead_time_us);
+        lead_time_us,
+        rf_freq,
+        if_freq,
+        bandwidth,
+        rf_gain,
+        if_gain,
+        ref_level,
+        if_band_offset);
 }
 
 template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
@@ -56,7 +70,14 @@ difi_sink_cpp_impl<V, Transport, BitDepth>::difi_sink_cpp_impl(
     uint32_t reference_time_full,
     uint64_t reference_time_frac,
     const std::string& length_tag_name,
-    uint32_t lead_time_us)
+    uint32_t lead_time_us,
+    double rf_freq,
+    double if_freq,
+    double bandwidth,
+    float rf_gain,
+    float if_gain,
+    float ref_level,
+    double if_band_offset)
     : gr::sync_block("difi_sink_cpp_impl",
                      gr::io_signature::make(1, 1, sizeof(sample_t)),
                      gr::io_signature::make(0, 0, 0)),
@@ -92,11 +113,20 @@ difi_sink_cpp_impl<V, Transport, BitDepth>::difi_sink_cpp_impl(
     d_samples_per_packet = samples_per_packet;
     d_data_len = samples_per_packet * s_bytes_per_sample;
 
-    m_context = difi::make_default_context<V>(static_cast<double>(samp_rate),
-                                              s_bit_depth_val,
-                                              d_stream_number,
-                                              reference_time_full,
-                                              reference_time_frac);
+    m_context = difi::make_context<V>({
+        .sample_rate = static_cast<double>(samp_rate),
+        .depth = s_bit_depth_val,
+        .stream_id = static_cast<uint32_t>(d_stream_number),
+        .rf_freq = rf_freq,
+        .if_freq = if_freq,
+        .bandwidth = bandwidth,
+        .if_band_offset = if_band_offset,
+        .rf_gain = rf_gain,
+        .if_gain = if_gain,
+        .ref_level = ref_level,
+        .full = reference_time_full,
+        .frac = reference_time_frac,
+    });
     m_context_buffer.resize(m_context.packet_size);
 
     m_class_id = m_context.class_id ^ 1;
@@ -107,22 +137,7 @@ template <difi::context_version V, sink_transport Transport, difi::bit_depth Bit
 requires valid_bit_depth<BitDepth>
 void difi_sink_cpp_impl<V, Transport, BitDepth>::reanchor_timestamp()
 {
-    auto now = std::chrono::system_clock::now();
-    auto now_s = std::chrono::time_point_cast<std::chrono::seconds>(now);
-    auto frac_duration = now - now_s;
-
-    uint32_t full = static_cast<uint32_t>(now_s.time_since_epoch().count());
-    uint64_t frac =
-        static_cast<uint64_t>(
-            std::chrono::duration_cast<std::chrono::nanoseconds>(frac_duration).count()) *
-        1000ULL;
-
-    frac += static_cast<uint64_t>(d_lead_time_us) * 1000000ULL;
-    if (frac >= difi::PICO_CONVERSION) {
-        full += static_cast<uint32_t>(frac / difi::PICO_CONVERSION);
-        frac = frac % difi::PICO_CONVERSION;
-    }
-
+    auto [full, frac] = difi::system_timestamp(d_lead_time_us);
     d_full = full;
     d_frac = frac;
     d_samples_since_last_reference = 0;
@@ -186,9 +201,9 @@ int difi_sink_cpp_impl<V, Transport, BitDepth>::work(
 
         // Burst starts at abs_offset
         d_burst_samples_remaining = pmt::to_uint64(next_tag->value);
-        this->d_logger->warn("Starting burst at offset {} with {} samples remaining",
-                             next_tag->offset,
-                             d_burst_samples_remaining);
+        this->d_logger->debug("Starting burst at offset {} with {} samples remaining",
+                              next_tag->offset,
+                              d_burst_samples_remaining);
         reanchor_timestamp();
     } else {
         // Check for overlapping burst tags
@@ -249,9 +264,9 @@ int difi_sink_cpp_impl<V, Transport, BitDepth>::work(
                                m_data_buffer.data() + difi::DIFI_HEADER_SIZE,
                                s_bit_depth_val);
             auto to_send = pack_data(tail_payload_bytes);
-            this->d_logger->crit("Sending final burst packet with {} samples ({} bytes)",
-                                 tail_samples,
-                                 tail_payload_bytes);
+            this->d_logger->debug("Sending final burst packet with {} samples ({} bytes)",
+                                  tail_samples,
+                                  tail_payload_bytes);
             m_transport->send(to_send.data(), to_send.size());
             d_pkt_n = (d_pkt_n + 1) % difi::VITA_PKT_MOD;
             d_samples_since_last_reference += tail_samples;
@@ -260,7 +275,10 @@ int difi_sink_cpp_impl<V, Transport, BitDepth>::work(
             d_burst_samples_remaining = 0;
         }
     }
-    this->d_logger->warn("Consumed {} samples, {} remaining in burst, {} available", samples_consumed, d_burst_samples_remaining, available_for_burst);
+    this->d_logger->debug("Consumed {} samples, {} remaining in burst, {} available",
+                          samples_consumed,
+                          d_burst_samples_remaining,
+                          available_for_burst);
     return samples_consumed;
 }
 

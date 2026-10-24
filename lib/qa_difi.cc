@@ -638,5 +638,161 @@ BOOST_AUTO_TEST_CASE(t_difi_sink_template_instantiations)
     sink_burst->set_length_tag_name("");
     BOOST_CHECK_EQUAL(sink_burst->burst_mode(), false);
     BOOST_CHECK_EQUAL(sink_burst->length_tag_name(), "");
+
+    // Test RF options in constructor and getters/setters
+    auto sink_rf = difi_sink_cpp<>::make(
+        "127.0.0.1", 5005, 1000000, 512, 0, 100, 0, 0, "", 10000,
+        1420000000.0, 70000000.0, 8000000.0, 20.0f, -2.0f, 15.0f, 5000.0);
+    BOOST_REQUIRE(sink_rf != nullptr);
+    BOOST_CHECK_CLOSE(sink_rf->rf_freq(), 1420000000.0, 0.01);
+    BOOST_CHECK_CLOSE(sink_rf->center_freq(), 1420000000.0, 0.01);
+    BOOST_CHECK_CLOSE(sink_rf->if_freq(), 70000000.0, 0.01);
+    BOOST_CHECK_CLOSE(sink_rf->bandwidth(), 8000000.0, 0.01);
+    BOOST_CHECK_CLOSE(sink_rf->rf_gain(), 20.0f, 0.1);
+    BOOST_CHECK_CLOSE(sink_rf->gain(), 20.0f, 0.1);
+    BOOST_CHECK_CLOSE(sink_rf->if_gain(), -2.0f, 0.1);
+    BOOST_CHECK_CLOSE(sink_rf->ref_level(), 15.0f, 0.1);
+    BOOST_CHECK_CLOSE(sink_rf->if_band_offset(), 5000.0, 0.01);
+
+    // Dynamic runtime updates
+    sink_rf->set_center_freq(2400000000.0);
+    BOOST_CHECK_CLOSE(sink_rf->center_freq(), 2400000000.0, 0.01);
+    sink_rf->set_gain(30.0f);
+    BOOST_CHECK_CLOSE(sink_rf->gain(), 30.0f, 0.1);
+    sink_rf->set_bandwidth(10000000.0);
+    BOOST_CHECK_CLOSE(sink_rf->bandwidth(), 10000000.0, 0.01);
+
+    auto ctx_rf = std::get<standard_context>(sink_rf->context());
+    BOOST_CHECK_CLOSE(ctx_rf.rf_ref_freq, 2400000000.0, 0.01);
+    BOOST_CHECK_CLOSE(ctx_rf.rf_gain, 30.0f, 0.1);
+    BOOST_CHECK_CLOSE(ctx_rf.bandwidth, 10000000.0, 0.01);
+}
+
+BOOST_AUTO_TEST_CASE(t_make_context_standard_defaults)
+{
+    difi::context_config cfg{
+        .sample_rate = 2000000.0,
+        .depth = 16,
+        .stream_id = 10,
+    };
+
+    standard_context ctx = difi::make_context<context_version::standard>(cfg);
+
+    BOOST_CHECK_EQUAL(ctx.packet_size, difi::STANDARD_CONTEXT_SIZE);
+    BOOST_CHECK_EQUAL(ctx.raw.size(), difi::STANDARD_CONTEXT_SIZE);
+    BOOST_CHECK_CLOSE(ctx.sample_rate, 2000000.0, 0.01);
+    BOOST_CHECK_CLOSE(ctx.bandwidth, 2000000.0, 0.01); // Defaults to sample_rate
+    BOOST_CHECK_CLOSE(ctx.rf_ref_freq, 0.0, 0.01);     // Defaults to 0
+    BOOST_CHECK_CLOSE(ctx.if_ref_freq, 0.0, 0.01);     // Defaults to 0
+    BOOST_CHECK_CLOSE(ctx.if_band_offset, 0.0, 0.01);  // Defaults to 0
+    BOOST_CHECK_CLOSE(ctx.rf_gain, 0.0f, 0.01);        // Defaults to 0
+    BOOST_CHECK_CLOSE(ctx.if_gain, 0.0f, 0.01);        // Defaults to 0
+    BOOST_CHECK_CLOSE(ctx.ref_level, 0.0f, 0.01);      // Defaults to 0
+    BOOST_CHECK_EQUAL(ctx.full, 0);
+    BOOST_CHECK_EQUAL(ctx.frac, 0);
+    BOOST_CHECK_EQUAL(ctx.timestamp_adjustment, 0);
+
+    // Verify round-trip parsing
+    standard_context parsed =
+        difi::parse_context<context_version::standard>(ctx.raw.data(), ctx.raw.size());
+    BOOST_CHECK_CLOSE(parsed.sample_rate, 2000000.0, 0.01);
+    BOOST_CHECK_CLOSE(parsed.bandwidth, 2000000.0, 0.01);
+    BOOST_CHECK_CLOSE(parsed.rf_ref_freq, 0.0, 0.01);
+    BOOST_CHECK_CLOSE(parsed.if_ref_freq, 0.0, 0.01);
+    BOOST_CHECK_CLOSE(parsed.rf_gain, 0.0f, 0.01);
+    BOOST_CHECK_CLOSE(parsed.if_gain, 0.0f, 0.01);
+}
+
+BOOST_AUTO_TEST_CASE(t_make_context_standard_custom)
+{
+    difi::context_config cfg{
+        .sample_rate = 5000000.0,
+        .depth = 16,
+        .stream_id = 42,
+        .rf_freq = 1500000000.0,
+        .if_freq = 70000000.0,
+        .bandwidth = 4000000.0,
+        .if_band_offset = 10000.0,
+        .rf_gain = 25.5f,
+        .if_gain = -3.2f,
+        .ref_level = 10.0f,
+        .full = 1700000000,
+        .frac = 500000000000ULL,
+        .timestamp_adjustment = 15000000,
+        .timestamp_calibration_time = 1699999000,
+    };
+
+    standard_context ctx = difi::make_context<context_version::standard>(cfg);
+
+    BOOST_CHECK_EQUAL(ctx.packet_size, difi::STANDARD_CONTEXT_SIZE);
+
+    standard_context parsed =
+        difi::parse_context<context_version::standard>(ctx.raw.data(), ctx.raw.size());
+    BOOST_CHECK_CLOSE(parsed.sample_rate, 5000000.0, 0.01);
+    BOOST_CHECK_CLOSE(parsed.bandwidth, 4000000.0, 0.01);
+    BOOST_CHECK_CLOSE(parsed.rf_ref_freq, 1500000000.0, 0.01);
+    BOOST_CHECK_CLOSE(parsed.if_ref_freq, 70000000.0, 0.01);
+    BOOST_CHECK_CLOSE(parsed.if_band_offset, 10000.0, 0.01);
+    BOOST_CHECK_CLOSE(parsed.rf_gain, 25.5f, 0.1);
+    BOOST_CHECK_CLOSE(parsed.if_gain, -3.2f, 0.1);
+    BOOST_CHECK_CLOSE(parsed.ref_level, 10.0f, 0.1);
+    BOOST_CHECK_EQUAL(parsed.full, 1700000000);
+    BOOST_CHECK_EQUAL(parsed.frac, 500000000000ULL);
+}
+
+BOOST_AUTO_TEST_CASE(t_make_context_alternative)
+{
+    difi::context_config cfg{
+        .sample_rate = 10000000.0,
+        .depth = 8,
+        .stream_id = 99,
+        .rf_freq = 2400000000.0,
+        .if_freq = 0.0,
+        .bandwidth = 8000000.0,
+    };
+
+    alternative_context ctx = difi::make_context<context_version::alternative>(cfg);
+
+    BOOST_CHECK_EQUAL(ctx.packet_size, difi::ALT_CONTEXT_SIZE);
+    BOOST_CHECK_EQUAL(ctx.raw.size(), difi::ALT_CONTEXT_SIZE);
+
+    alternative_context parsed =
+        difi::parse_context<context_version::alternative>(ctx.raw.data(), ctx.raw.size());
+    BOOST_CHECK_CLOSE(parsed.sample_rate, 10000000.0, 0.01);
+    BOOST_CHECK_CLOSE(parsed.bandwidth, 8000000.0, 0.01);
+    BOOST_CHECK_CLOSE(parsed.rf_ref_freq, 2400000000.0, 0.01);
+    BOOST_CHECK_CLOSE(parsed.if_ref_freq, 0.0, 0.01);
+}
+
+BOOST_AUTO_TEST_CASE(t_make_context_runtime_variant)
+{
+    difi::context_config cfg{
+        .sample_rate = 2000000.0,
+        .depth = 16,
+        .stream_id = 1,
+    };
+
+    auto var_std = difi::make_context(difi::context_version::standard, cfg);
+    BOOST_CHECK(std::holds_alternative<standard_context>(var_std));
+    BOOST_CHECK_EQUAL(std::get<standard_context>(var_std).packet_size, 108);
+
+    auto var_alt = difi::make_context(difi::context_version::alternative, cfg);
+    BOOST_CHECK(std::holds_alternative<alternative_context>(var_alt));
+    BOOST_CHECK_EQUAL(std::get<alternative_context>(var_alt).packet_size, 72);
+}
+
+BOOST_AUTO_TEST_CASE(t_system_timestamp)
+{
+    auto [full1, frac1] = difi::system_timestamp(0);
+    // Timestamp should be recent POSIX epoch seconds (greater than 2024-01-01: ~1704067200)
+    BOOST_CHECK_GT(full1, 1704067200U);
+    BOOST_CHECK_LT(frac1, difi::PICO_PER_SEC);
+
+    // With 1 second (1,000,000 us) lead time
+    auto [full2, frac2] = difi::system_timestamp(1000000);
+    BOOST_CHECK_GE(full2, full1);
+    if (full2 == full1) {
+        BOOST_CHECK_GE(frac2, frac1);
+    }
 }
 

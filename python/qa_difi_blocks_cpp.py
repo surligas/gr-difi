@@ -940,7 +940,7 @@ class qa_testcpp(gr_unittest.TestCase):
         assert ctx.packet_size == 108
         assert ctx.class_id == (0x6a621e << 32) | 1
         assert ctx.sample_rate == 1000000.0
-        assert ctx.bandwidth == 800000.0
+        assert ctx.bandwidth == 1000000.0
 
         ctx.bandwidth = 500000.0
         sink_std.set_context(ctx)
@@ -955,7 +955,33 @@ class qa_testcpp(gr_unittest.TestCase):
         ctx_alt = sink_alt.context()
         assert ctx_alt.packet_size == 72
         assert ctx_alt.class_id == (0x7c386c << 32) | 1
-        assert ctx_alt.bandwidth == 800000.0
+        assert ctx_alt.bandwidth == 1000000.0
+
+        # Test RF options constructor and getters/setters in Python
+        sink_rf = difi_sink_cpp_sc16(
+            '127.0.0.1', 5001, 2000000, 256,
+            rf_freq=1.42e9, if_freq=70e6, bandwidth=1.5e6,
+            rf_gain=25.0, if_gain=-1.5, ref_level=12.0, if_band_offset=1000.0
+        )
+        assert sink_rf.rf_freq() == 1.42e9
+        assert sink_rf.center_freq() == 1.42e9
+        assert sink_rf.if_freq() == 70e6
+        assert sink_rf.bandwidth() == 1.5e6
+        assert sink_rf.rf_gain() == 25.0
+        assert sink_rf.gain() == 25.0
+        assert sink_rf.if_gain() == -1.5
+        assert sink_rf.ref_level() == 12.0
+        assert sink_rf.if_band_offset() == 1000.0
+
+        sink_rf.set_center_freq(2.4e9)
+        assert sink_rf.center_freq() == 2.4e9
+        sink_rf.set_gain(30.0)
+        assert sink_rf.gain() == 30.0
+        sink_rf.set_bandwidth(2.0e6)
+        assert sink_rf.bandwidth() == 2.0e6
+        assert sink_rf.context().rf_ref_freq == 2.4e9
+        assert sink_rf.context().rf_gain == 30.0
+        assert sink_rf.context().bandwidth == 2.0e6
 
 
 # helper functions
@@ -1097,7 +1123,7 @@ def socket_rec_confirm_context_correct_alt(server, socket_type, sample_rate, exp
     # bit depth is one plus value in data format see DIFI spec.
     assert bit_depth + 1 == expect_bit_depth
     assert sample_rate == r_samp_rate
-    assert int(sample_rate * .8) == r_bw
+    assert sample_rate == r_bw
     # DIFI spec 1.0 oui 0x7C386C was the default, check for
     # both depending on the context packet size
     assert r_oui == 0x6a621e or r_oui == 0x7C386C

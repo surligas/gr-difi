@@ -8,7 +8,15 @@ label: DIFI Sink
 category: '[DIFI]'
 templates:
   imports: import difi
-  make: difi.difi_sink_cpp_${ 'sc8' if bit_depth == '8' else 'sc16' }(${ip_addr}, ${port}, ${sample_rate}, ${data_size}, ${stream_id}, ${context_packet_send_count}, ${reference_time_full}, ${reference_time_frac}, ${ '""' if mode == 'streaming' else length_tag_name }, int(${lead_time_us}), int(${context_pack_size}), int(${protocol}))
+  make: difi.difi_sink_cpp_${ 'sc8' if bit_depth == '8' else 'sc16' }(${ip_addr}, ${port}, ${sample_rate}, ${data_size}, ${stream_id}, ${context_packet_send_count}, ${reference_time_full}, ${reference_time_frac}, ${ '""' if mode == 'streaming' else length_tag_name }, int(${lead_time_us}), int(${context_pack_size}), int(${protocol}), float(${rf_freq}), float(${if_freq}), float(${bandwidth}), float(${rf_gain}), float(${if_gain}), float(${ref_level}), float(${if_band_offset}))
+  callbacks:
+  - set_rf_freq(${rf_freq})
+  - set_if_freq(${if_freq})
+  - set_bandwidth(${bandwidth})
+  - set_rf_gain(${rf_gain})
+  - set_if_gain(${if_gain})
+  - set_ref_level(${ref_level})
+  - set_if_band_offset(${if_band_offset})
 
 parameters:
 - id: bit_depth
@@ -77,6 +85,44 @@ parameters:
   options: ['108', '72']
   option_labels: ['Standard (108 bytes)', 'Alternative (72 bytes)']
   default: '108'
+- id: rf_freq
+  label: Center Freq (Hz)
+  category: RF Options
+  dtype: real
+  default: '0'
+- id: if_freq
+  label: IF Freq (Hz)
+  category: RF Options
+  dtype: real
+  default: '0'
+- id: bandwidth
+  label: Bandwidth (Hz)
+  category: RF Options
+  dtype: real
+  default: '0'
+- id: rf_gain
+  label: RF Gain (dB)
+  category: RF Options
+  dtype: float
+  default: '0'
+  hide: ${ ('none' if context_pack_size == '108' else 'all') }
+- id: if_gain
+  label: IF Gain (dB)
+  category: RF Options
+  dtype: float
+  default: '0'
+  hide: ${ ('none' if context_pack_size == '108' else 'all') }
+- id: ref_level
+  label: Reference Level (dBm)
+  category: RF Options
+  dtype: float
+  default: '0'
+  hide: ${ ('none' if context_pack_size == '108' else 'all') }
+- id: if_band_offset
+  label: IF Band Offset (Hz)
+  category: RF Options
+  dtype: real
+  default: '0'
 
 asserts:
 - ${ mode != 'burst' or len(length_tag_name.strip('\"\'')) > 0 }

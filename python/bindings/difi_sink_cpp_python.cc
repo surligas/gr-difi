@@ -67,6 +67,13 @@ void bind_difi_sink_cpp(py::module& m)
         uint32_t lead_time_us,
         int context_version_int,
         uint8_t protocol,
+        double rf_freq,
+        double if_freq,
+        double bandwidth,
+        float rf_gain,
+        float if_gain,
+        float ref_level,
+        double if_band_offset,
         int bit_depth_int
     ) -> difi_sink_base::sptr {
         bool is_alt = (context_version_int == 72 || context_version_int == static_cast<int>(difi::context_version::alternative));
@@ -77,33 +84,41 @@ void bind_difi_sink_cpp(py::module& m)
             if (is_tcp) {
                 if (is_8bit) return difi_sink_cpp<difi::context_version::alternative, tcp_client, difi::bit_depth::bits_8>::make(
                     ip_addr, port, samp_rate, samples_per_packet, stream_number, context_interval,
-                    reference_time_full, reference_time_frac, length_tag_name, lead_time_us);
+                    reference_time_full, reference_time_frac, length_tag_name, lead_time_us,
+                    rf_freq, if_freq, bandwidth, rf_gain, if_gain, ref_level, if_band_offset);
                 else return difi_sink_cpp<difi::context_version::alternative, tcp_client, difi::bit_depth::bits_16>::make(
                     ip_addr, port, samp_rate, samples_per_packet, stream_number, context_interval,
-                    reference_time_full, reference_time_frac, length_tag_name, lead_time_us);
+                    reference_time_full, reference_time_frac, length_tag_name, lead_time_us,
+                    rf_freq, if_freq, bandwidth, rf_gain, if_gain, ref_level, if_band_offset);
             } else {
                 if (is_8bit) return difi_sink_cpp<difi::context_version::alternative, udp_client, difi::bit_depth::bits_8>::make(
                     ip_addr, port, samp_rate, samples_per_packet, stream_number, context_interval,
-                    reference_time_full, reference_time_frac, length_tag_name, lead_time_us);
+                    reference_time_full, reference_time_frac, length_tag_name, lead_time_us,
+                    rf_freq, if_freq, bandwidth, rf_gain, if_gain, ref_level, if_band_offset);
                 else return difi_sink_cpp<difi::context_version::alternative, udp_client, difi::bit_depth::bits_16>::make(
                     ip_addr, port, samp_rate, samples_per_packet, stream_number, context_interval,
-                    reference_time_full, reference_time_frac, length_tag_name, lead_time_us);
+                    reference_time_full, reference_time_frac, length_tag_name, lead_time_us,
+                    rf_freq, if_freq, bandwidth, rf_gain, if_gain, ref_level, if_band_offset);
             }
         } else {
             if (is_tcp) {
                 if (is_8bit) return difi_sink_cpp<difi::context_version::standard, tcp_client, difi::bit_depth::bits_8>::make(
                     ip_addr, port, samp_rate, samples_per_packet, stream_number, context_interval,
-                    reference_time_full, reference_time_frac, length_tag_name, lead_time_us);
+                    reference_time_full, reference_time_frac, length_tag_name, lead_time_us,
+                    rf_freq, if_freq, bandwidth, rf_gain, if_gain, ref_level, if_band_offset);
                 else return difi_sink_cpp<difi::context_version::standard, tcp_client, difi::bit_depth::bits_16>::make(
                     ip_addr, port, samp_rate, samples_per_packet, stream_number, context_interval,
-                    reference_time_full, reference_time_frac, length_tag_name, lead_time_us);
+                    reference_time_full, reference_time_frac, length_tag_name, lead_time_us,
+                    rf_freq, if_freq, bandwidth, rf_gain, if_gain, ref_level, if_band_offset);
             } else {
                 if (is_8bit) return difi_sink_cpp<difi::context_version::standard, udp_client, difi::bit_depth::bits_8>::make(
                     ip_addr, port, samp_rate, samples_per_packet, stream_number, context_interval,
-                    reference_time_full, reference_time_frac, length_tag_name, lead_time_us);
+                    reference_time_full, reference_time_frac, length_tag_name, lead_time_us,
+                    rf_freq, if_freq, bandwidth, rf_gain, if_gain, ref_level, if_band_offset);
                 else return difi_sink_cpp<difi::context_version::standard, udp_client, difi::bit_depth::bits_16>::make(
                     ip_addr, port, samp_rate, samples_per_packet, stream_number, context_interval,
-                    reference_time_full, reference_time_frac, length_tag_name, lead_time_us);
+                    reference_time_full, reference_time_frac, length_tag_name, lead_time_us,
+                    rf_freq, if_freq, bandwidth, rf_gain, if_gain, ref_level, if_band_offset);
             }
         }
     };
@@ -120,12 +135,22 @@ void bind_difi_sink_cpp(py::module& m)
         std::string length_tag_name,
         uint32_t lead_time_us,
         int context_version_int,
-        uint8_t protocol
+        uint8_t protocol,
+        double rf_freq,
+        double if_freq,
+        double bandwidth,
+        float rf_gain,
+        float if_gain,
+        float ref_level,
+        double if_band_offset
     ) {
         return make_dispatch(ip_addr, port, samp_rate, samples_per_packet,
                              stream_number, context_interval, reference_time_full,
                              reference_time_frac, length_tag_name, lead_time_us,
-                             context_version_int, protocol, 8);
+                             context_version_int, protocol,
+                             rf_freq, if_freq, bandwidth,
+                             rf_gain, if_gain, ref_level, if_band_offset,
+                             8);
     };
 
     auto make_sc16 = [make_dispatch](
@@ -140,12 +165,22 @@ void bind_difi_sink_cpp(py::module& m)
         std::string length_tag_name,
         uint32_t lead_time_us,
         int context_version_int,
-        uint8_t protocol
+        uint8_t protocol,
+        double rf_freq,
+        double if_freq,
+        double bandwidth,
+        float rf_gain,
+        float if_gain,
+        float ref_level,
+        double if_band_offset
     ) {
         return make_dispatch(ip_addr, port, samp_rate, samples_per_packet,
                              stream_number, context_interval, reference_time_full,
                              reference_time_frac, length_tag_name, lead_time_us,
-                             context_version_int, protocol, 16);
+                             context_version_int, protocol,
+                             rf_freq, if_freq, bandwidth,
+                             rf_gain, if_gain, ref_level, if_band_offset,
+                             16);
     };
 
     py::class_<difi_sink_base, gr::sync_block, gr::block, gr::basic_block,
@@ -163,6 +198,13 @@ void bind_difi_sink_cpp(py::module& m)
            py::arg("lead_time_us") = 10000,
            py::arg("context_version") = 108,
            py::arg("protocol") = 2,
+           py::arg("rf_freq") = 0.0,
+           py::arg("if_freq") = 0.0,
+           py::arg("bandwidth") = 0.0,
+           py::arg("rf_gain") = 0.0f,
+           py::arg("if_gain") = 0.0f,
+           py::arg("ref_level") = 0.0f,
+           py::arg("if_band_offset") = 0.0,
            py::arg("bit_depth") = 16
         )
         .def_static("make", make_dispatch,
@@ -178,6 +220,13 @@ void bind_difi_sink_cpp(py::module& m)
            py::arg("lead_time_us") = 10000,
            py::arg("context_version") = 108,
            py::arg("protocol") = 2,
+           py::arg("rf_freq") = 0.0,
+           py::arg("if_freq") = 0.0,
+           py::arg("bandwidth") = 0.0,
+           py::arg("rf_gain") = 0.0f,
+           py::arg("if_gain") = 0.0f,
+           py::arg("ref_level") = 0.0f,
+           py::arg("if_band_offset") = 0.0,
            py::arg("bit_depth") = 16
         )
         .def("set_length_tag_name", &difi_sink_base::set_length_tag_name, py::arg("tag_name"))
@@ -186,7 +235,25 @@ void bind_difi_sink_cpp(py::module& m)
         .def("set_lead_time_us", &difi_sink_base::set_lead_time_us, py::arg("lead_time_us"))
         .def("lead_time_us", &difi_sink_base::lead_time_us)
         .def("context", &difi_sink_base::context)
-        .def("set_context", &difi_sink_base::set_context, py::arg("ctx"));
+        .def("set_context", &difi_sink_base::set_context, py::arg("ctx"))
+        .def("set_rf_freq", &difi_sink_base::set_rf_freq, py::arg("freq"))
+        .def("rf_freq", &difi_sink_base::rf_freq)
+        .def("set_center_freq", &difi_sink_base::set_center_freq, py::arg("freq"))
+        .def("center_freq", &difi_sink_base::center_freq)
+        .def("set_if_freq", &difi_sink_base::set_if_freq, py::arg("freq"))
+        .def("if_freq", &difi_sink_base::if_freq)
+        .def("set_bandwidth", &difi_sink_base::set_bandwidth, py::arg("bw"))
+        .def("bandwidth", &difi_sink_base::bandwidth)
+        .def("set_rf_gain", &difi_sink_base::set_rf_gain, py::arg("gain"))
+        .def("rf_gain", &difi_sink_base::rf_gain)
+        .def("set_gain", &difi_sink_base::set_gain, py::arg("gain"))
+        .def("gain", &difi_sink_base::gain)
+        .def("set_if_gain", &difi_sink_base::set_if_gain, py::arg("gain"))
+        .def("if_gain", &difi_sink_base::if_gain)
+        .def("set_ref_level", &difi_sink_base::set_ref_level, py::arg("level"))
+        .def("ref_level", &difi_sink_base::ref_level)
+        .def("set_if_band_offset", &difi_sink_base::set_if_band_offset, py::arg("offset"))
+        .def("if_band_offset", &difi_sink_base::if_band_offset);
 
     m.def("difi_sink_cpp", make_dispatch,
        py::arg("ip_addr"),
@@ -201,6 +268,13 @@ void bind_difi_sink_cpp(py::module& m)
        py::arg("lead_time_us") = 10000,
        py::arg("context_version") = 108,
        py::arg("protocol") = 2,
+       py::arg("rf_freq") = 0.0,
+       py::arg("if_freq") = 0.0,
+       py::arg("bandwidth") = 0.0,
+       py::arg("rf_gain") = 0.0f,
+       py::arg("if_gain") = 0.0f,
+       py::arg("ref_level") = 0.0f,
+       py::arg("if_band_offset") = 0.0,
        py::arg("bit_depth") = 16
     );
 
@@ -216,7 +290,14 @@ void bind_difi_sink_cpp(py::module& m)
        py::arg("length_tag_name") = "",
        py::arg("lead_time_us") = 10000,
        py::arg("context_version") = 108,
-       py::arg("protocol") = 2
+       py::arg("protocol") = 2,
+       py::arg("rf_freq") = 0.0,
+       py::arg("if_freq") = 0.0,
+       py::arg("bandwidth") = 0.0,
+       py::arg("rf_gain") = 0.0f,
+       py::arg("if_gain") = 0.0f,
+       py::arg("ref_level") = 0.0f,
+       py::arg("if_band_offset") = 0.0
     );
 
     m.def("difi_sink_cpp_sc16", make_sc16,
@@ -231,6 +312,13 @@ void bind_difi_sink_cpp(py::module& m)
        py::arg("length_tag_name") = "",
        py::arg("lead_time_us") = 10000,
        py::arg("context_version") = 108,
-       py::arg("protocol") = 2
+       py::arg("protocol") = 2,
+       py::arg("rf_freq") = 0.0,
+       py::arg("if_freq") = 0.0,
+       py::arg("bandwidth") = 0.0,
+       py::arg("rf_gain") = 0.0f,
+       py::arg("if_gain") = 0.0f,
+       py::arg("ref_level") = 0.0f,
+       py::arg("if_band_offset") = 0.0
     );
 }

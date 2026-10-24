@@ -67,7 +67,10 @@ namespace gr {
                         uint32_t samples_per_packet, int stream_number = 0,
                         int context_interval = 100, uint32_t reference_time_full = 0,
                         uint64_t reference_time_frac = 0,
-                        const std::string& length_tag_name = "", uint32_t lead_time_us = 10000);
+                        const std::string& length_tag_name = "", uint32_t lead_time_us = 10000,
+                        double rf_freq = 0.0, double if_freq = 0.0, double bandwidth = 0.0,
+                        float rf_gain = 0.0f, float if_gain = 0.0f, float ref_level = 0.0f,
+                        double if_band_offset = 0.0);
       ~difi_sink_cpp_impl() override = default;
 
       // Where all the action really happens
@@ -95,6 +98,70 @@ namespace gr {
           throw std::invalid_argument("Context version mismatch");
         }
       }
+
+      void set_rf_freq(double freq) override { m_context.rf_ref_freq = freq; }
+      double rf_freq() const override { return m_context.rf_ref_freq; }
+      void set_center_freq(double freq) override { set_rf_freq(freq); }
+      double center_freq() const override { return rf_freq(); }
+
+      void set_if_freq(double freq) override { m_context.if_ref_freq = freq; }
+      double if_freq() const override { return m_context.if_ref_freq; }
+
+      void set_bandwidth(double bw) override
+      {
+          m_context.bandwidth = (bw > 0.0) ? bw : static_cast<double>(d_full_samp);
+      }
+      double bandwidth() const override { return m_context.bandwidth; }
+
+      void set_rf_gain(float gain) override
+      {
+          if constexpr (V == difi::context_version::standard) {
+              m_context.rf_gain = gain;
+          }
+      }
+      float rf_gain() const override
+      {
+          if constexpr (V == difi::context_version::standard) {
+              return m_context.rf_gain;
+          } else {
+              return 0.0f;
+          }
+      }
+      void set_gain(float gain) override { set_rf_gain(gain); }
+      float gain() const override { return rf_gain(); }
+
+      void set_if_gain(float gain) override
+      {
+          if constexpr (V == difi::context_version::standard) {
+              m_context.if_gain = gain;
+          }
+      }
+      float if_gain() const override
+      {
+          if constexpr (V == difi::context_version::standard) {
+              return m_context.if_gain;
+          } else {
+              return 0.0f;
+          }
+      }
+
+      void set_ref_level(float level) override
+      {
+          if constexpr (V == difi::context_version::standard) {
+              m_context.ref_level = level;
+          }
+      }
+      float ref_level() const override
+      {
+          if constexpr (V == difi::context_version::standard) {
+              return m_context.ref_level;
+          } else {
+              return 0.0f;
+          }
+      }
+
+      void set_if_band_offset(double offset) override { m_context.if_band_offset = offset; }
+      double if_band_offset() const override { return m_context.if_band_offset; }
 
       const difi::context<V>& typed_context() const { return m_context; }
       void set_typed_context(const difi::context<V>& ctx) { m_context = ctx; }

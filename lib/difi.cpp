@@ -12,6 +12,7 @@
 #include <volk/volk_16u_byteswap.h>
 
 #include <arpa/inet.h>
+#include <chrono>
 #include <endian.h>
 #include <cmath>
 #include <cstring>
@@ -377,6 +378,97 @@ difi::pack_context(const context_variant& ctx, uint8_t pkt_n, uint32_t stream_id
 {
     return std::visit([&](const auto& c) { return pack_context(c, pkt_n, stream_id); },
                       ctx);
+}
+
+template <>
+difi::standard_context
+difi::make_context<difi::context_version::standard>(const difi::context_config& cfg)
+{
+    standard_context ctx;
+    ctx.class_id = (cfg.class_id != 0) ? cfg.class_id : ((STANDARD_OUI << 32) ^ 1);
+    ctx.full = cfg.full;
+    ctx.frac = cfg.frac;
+    ctx.cif = (cfg.cif != 0) ? cfg.cif : 0xfbb98000U;
+    ctx.ref_point = (cfg.ref_point != 0) ? cfg.ref_point : 0x64U;
+    ctx.sample_rate = cfg.sample_rate;
+    ctx.bandwidth = (cfg.bandwidth > 0.0) ? cfg.bandwidth : cfg.sample_rate;
+    ctx.if_ref_freq = cfg.if_freq;
+    ctx.rf_ref_freq = cfg.rf_freq;
+    ctx.if_band_offset = cfg.if_band_offset;
+    ctx.ref_level = cfg.ref_level;
+    ctx.rf_gain = cfg.rf_gain;
+    ctx.if_gain = cfg.if_gain;
+    ctx.timestamp_adjustment = cfg.timestamp_adjustment;
+    ctx.timestamp_calibration_time =
+        (cfg.timestamp_calibration_time != 0) ? cfg.timestamp_calibration_time : cfg.full;
+    ctx.state_and_event_indicators =
+        (cfg.state_and_event_indicators != 0) ? cfg.state_and_event_indicators
+                                              : static_cast<uint32_t>(DEFAULT_STATE_AND_EVENTS);
+    ctx.payload_format = (cfg.depth == 8) ? EIGHT_BIT_SIGNED_CART_LINK_EFF
+                                          : SIXTEEN_BIT_SIGNED_CART_LINK_EFF;
+    ctx.packet_size = STANDARD_CONTEXT_SIZE;
+
+    auto packed = pack_context(ctx, 0, cfg.stream_id, STANDARD_CONTEXT_SIZE);
+    ctx.raw.assign(packed.begin(), packed.end());
+
+    return ctx;
+}
+
+template <>
+difi::alternative_context
+difi::make_context<difi::context_version::alternative>(const difi::context_config& cfg)
+{
+    alternative_context ctx;
+    ctx.class_id = (cfg.class_id != 0) ? cfg.class_id : ((ALT_OUI << 32) ^ 1);
+    ctx.cif = (cfg.cif != 0) ? cfg.cif : 966885376U;
+    ctx.sample_rate = cfg.sample_rate;
+    ctx.bandwidth = (cfg.bandwidth > 0.0) ? cfg.bandwidth : cfg.sample_rate;
+    ctx.if_ref_freq = cfg.if_freq;
+    ctx.rf_ref_freq = cfg.rf_freq;
+    ctx.if_band_offset = cfg.if_band_offset;
+    ctx.state_and_event_indicators =
+        (cfg.state_and_event_indicators != 0) ? cfg.state_and_event_indicators
+                                              : static_cast<uint32_t>(DEFAULT_STATE_AND_EVENTS);
+    ctx.payload_format = (cfg.depth == 8) ? EIGHT_BIT_SIGNED_CART_LINK_EFF
+                                          : SIXTEEN_BIT_SIGNED_CART_LINK_EFF;
+    ctx.packet_size = ALT_CONTEXT_SIZE;
+
+    auto packed = pack_context(ctx, 0, cfg.stream_id, ALT_CONTEXT_SIZE);
+    ctx.raw.assign(packed.begin(), packed.end());
+
+    return ctx;
+}
+
+difi::context_variant difi::make_context(context_version version,
+                                         const context_config& cfg)
+{
+    if (version == context_version::alternative) {
+        return make_context<context_version::alternative>(cfg);
+    }
+    return make_context<context_version::standard>(cfg);
+}
+
+std::pair<uint32_t, uint64_t> difi::system_timestamp(uint32_t lead_time_us)
+{
+    auto now = std::chrono::system_clock::now();
+    auto now_s = std::chrono::time_point_cast<std::chrono::seconds>(now);
+    auto frac_duration = now - now_s;
+
+    uint32_t full = static_cast<uint32_t>(now_s.time_since_epoch().count());
+    uint64_t frac =
+        static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(frac_duration).count()) *
+        1000ULL;
+
+    if (lead_time_us > 0) {
+        frac += static_cast<uint64_t>(lead_time_us) * 1000000ULL;
+        if (frac >= PICO_PER_SEC) {
+            full += static_cast<uint32_t>(frac / PICO_PER_SEC);
+            frac = frac % PICO_PER_SEC;
+        }
+    }
+
+    return { full, frac };
 }
 
 template <>

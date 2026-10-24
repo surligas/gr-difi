@@ -19,6 +19,7 @@
 
 #include <array>
 #include <bit>
+#include <chrono>
 #include <complex>
 #include <concepts>
 #include <cstddef>
@@ -153,6 +154,30 @@ public:
     using difi_context = standard_context;
     using context_variant = std::variant<standard_context, alternative_context>;
     using difi_header = header;
+
+    /**
+     * @brief Configuration parameters for creating a context packet.
+     */
+    struct context_config {
+        double sample_rate = 1.0;                ///< Sample rate in Hz
+        int depth = 16;                          ///< Bit depth (8 or 16)
+        uint32_t stream_id = 0;                  ///< Stream identifier
+        double rf_freq = 0.0;                    ///< RF reference frequency in Hz (default: 0.0)
+        double if_freq = 0.0;                    ///< IF reference frequency in Hz (default: 0.0)
+        double bandwidth = 0.0;                  ///< Bandwidth in Hz (0.0 defaults to sample_rate)
+        double if_band_offset = 0.0;             ///< IF band offset in Hz (default: 0.0)
+        float rf_gain = 0.0f;                    ///< RF gain in dB (standard_context only, default: 0.0)
+        float if_gain = 0.0f;                    ///< IF gain in dB (standard_context only, default: 0.0)
+        float ref_level = 0.0f;                  ///< Reference level in dBm (standard_context only, default: 0.0)
+        uint32_t full = 0;                       ///< Integer seconds timestamp (default: 0)
+        uint64_t frac = 0;                       ///< Fractional picoseconds timestamp (default: 0)
+        int64_t timestamp_adjustment = 0;        ///< Timestamp adjustment in femtoseconds (default: 0)
+        uint32_t timestamp_calibration_time = 0; ///< Timestamp calibration time in seconds (0 defaults to full)
+        uint64_t class_id = 0;                   ///< Class identifier (0 defaults to standard/alternative OUI ^ 1)
+        uint32_t cif = 0;                        ///< Context indicator field (0 defaults to standard/alternative default)
+        uint32_t ref_point = 0x64;               ///< Reference point (default: 0x64)
+        uint32_t state_and_event_indicators = 0; ///< State and event indicators (0 defaults to DEFAULT_STATE_AND_EVENTS)
+    };
 
     // --- Byte-Order Serialization Helpers ---
 
@@ -459,6 +484,25 @@ public:
                              std::span<uint8_t> out);
 
     /**
+     * @brief Creates a typed context packet from a configuration struct.
+     *
+     * @tparam V context version (standard or alternative)
+     * @param cfg context configuration
+     * @return context<V> configured context packet
+     */
+    template <context_version V = context_version::standard>
+    static context<V> make_context(const context_config& cfg);
+
+    /**
+     * @brief Creates a context packet variant based on the requested version.
+     *
+     * @param version context version (standard or alternative)
+     * @param cfg context configuration
+     * @return context_variant containing standard_context or alternative_context
+     */
+    static context_variant make_context(context_version version, const context_config& cfg);
+
+    /**
      * @brief Creates a default typed context packet for standalone sink mode.
      *
      * @tparam V context version
@@ -497,6 +541,15 @@ public:
                                                  size_t packet_size);
 
     // --- Timestamp Arithmetic ---
+
+    /**
+     * @brief Generates a DIFI timestamp from the host wall-clock (UTC / POSIX).
+     *
+     * @param lead_time_us optional lead time in microseconds to add into the future
+     * @return std::pair<uint32_t, uint64_t> {full, frac} where full is POSIX seconds
+     *         and frac is fractional picoseconds (0..999,999,999,999).
+     */
+    static std::pair<uint32_t, uint64_t> system_timestamp(uint32_t lead_time_us = 0);
 
     /**
      * @brief Advances a DIFI timestamp by a given number of samples.

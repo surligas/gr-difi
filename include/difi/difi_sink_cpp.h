@@ -63,6 +63,31 @@ namespace gr {
 
       virtual difi::context_variant context() const = 0;
       virtual void set_context(const difi::context_variant& ctx) = 0;
+
+      virtual void set_rf_freq(double freq) = 0;
+      virtual double rf_freq() const = 0;
+      virtual void set_center_freq(double freq) = 0;
+      virtual double center_freq() const = 0;
+
+      virtual void set_if_freq(double freq) = 0;
+      virtual double if_freq() const = 0;
+
+      virtual void set_bandwidth(double bw) = 0;
+      virtual double bandwidth() const = 0;
+
+      virtual void set_rf_gain(float gain) = 0;
+      virtual float rf_gain() const = 0;
+      virtual void set_gain(float gain) = 0;
+      virtual float gain() const = 0;
+
+      virtual void set_if_gain(float gain) = 0;
+      virtual float if_gain() const = 0;
+
+      virtual void set_ref_level(float level) = 0;
+      virtual float ref_level() const = 0;
+
+      virtual void set_if_band_offset(double offset) = 0;
+      virtual double if_band_offset() const = 0;
     };
 
     /**
@@ -99,7 +124,14 @@ namespace gr {
           uint32_t reference_time_full = 0,
           uint64_t reference_time_frac = 0,
           const std::string& length_tag_name = "",
-          uint32_t lead_time_us = 10000);
+          uint32_t lead_time_us = 10000,
+          double rf_freq = 0.0,
+          double if_freq = 0.0,
+          double bandwidth = 0.0,
+          float rf_gain = 0.0f,
+          float if_gain = 0.0f,
+          float ref_level = 0.0f,
+          double if_band_offset = 0.0);
     };
 
     typedef difi_sink_base difi_sink_cpp_sc8;
