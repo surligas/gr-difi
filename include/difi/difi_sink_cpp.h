@@ -129,8 +129,6 @@ namespace gr {
           uint32_t samples_per_packet,
           int stream_number = 0,
           int context_interval = 100,
-          uint32_t reference_time_full = 0,
-          uint64_t reference_time_frac = 0,
           const std::string& length_tag_name = "",
           uint32_t lead_time_us = 10000,
           double rf_freq = 0.0,

@@ -26,8 +26,6 @@ difi_sink_cpp<V, Transport, BitDepth>::make(std::string ip_addr,
                                             uint32_t samples_per_packet,
                                             int stream_number,
                                             int context_interval,
-                                            uint32_t reference_time_full,
-                                            uint64_t reference_time_frac,
                                             const std::string& length_tag_name,
                                             uint32_t lead_time_us,
                                             double rf_freq,
@@ -47,8 +45,6 @@ difi_sink_cpp<V, Transport, BitDepth>::make(std::string ip_addr,
         samples_per_packet,
         stream_number,
         context_interval,
-        reference_time_full,
-        reference_time_frac,
         length_tag_name,
         lead_time_us,
         rf_freq,
@@ -71,8 +67,6 @@ difi_sink_cpp_impl<V, Transport, BitDepth>::difi_sink_cpp_impl(
     uint32_t samples_per_packet,
     int stream_number,
     int context_interval,
-    uint32_t reference_time_full,
-    uint64_t reference_time_frac,
     const std::string& length_tag_name,
     uint32_t lead_time_us,
     double rf_freq,
@@ -113,8 +107,8 @@ difi_sink_cpp_impl<V, Transport, BitDepth>::difi_sink_cpp_impl(
         length_tag_name.empty() ? pmt::PMT_NIL : pmt::intern(length_tag_name);
     d_burst_samples_remaining = 0;
     d_lead_time_us = lead_time_us;
-    d_full = reference_time_full;
-    d_frac = reference_time_frac;
+    d_full = 0;
+    d_frac = 0;
     m_time_source = time_source;
     d_static_bits = difi::make_data_static_bits(m_time_source);
     d_samples_per_packet = samples_per_packet;
@@ -131,8 +125,8 @@ difi_sink_cpp_impl<V, Transport, BitDepth>::difi_sink_cpp_impl(
         .rf_gain = rf_gain,
         .if_gain = if_gain,
         .ref_level = ref_level,
-        .full = reference_time_full,
-        .frac = reference_time_frac,
+        .full = 0,
+        .frac = 0,
         .ref_point = ref_point,
         .tsi = time_source,
     });

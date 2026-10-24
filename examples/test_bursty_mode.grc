@@ -97,8 +97,6 @@ blocks:
     offset: '0'
     port: '5003'
     protocol: '2'
-    reference_time_frac: '964925050735'
-    reference_time_full: '1666209080'
     sample_rate: int(samp_rate)
     scaling: '2'
     stream_id: '80000'

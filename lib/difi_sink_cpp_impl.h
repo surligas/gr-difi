@@ -66,8 +66,7 @@ namespace gr {
      public:
       difi_sink_cpp_impl(std::string ip_addr, uint16_t port, uint64_t samp_rate,
                         uint32_t samples_per_packet, int stream_number = 0,
-                        int context_interval = 100, uint32_t reference_time_full = 0,
-                        uint64_t reference_time_frac = 0,
+                        int context_interval = 100,
                         const std::string& length_tag_name = "", uint32_t lead_time_us = 10000,
                         double rf_freq = 0.0, double if_freq = 0.0, double bandwidth = 0.0,
                         float rf_gain = 0.0f, float if_gain = 0.0f, float ref_level = 0.0f,

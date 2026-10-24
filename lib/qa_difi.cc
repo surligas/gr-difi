@@ -629,7 +629,7 @@ BOOST_AUTO_TEST_CASE(t_difi_sink_template_instantiations)
 
     // Burst mode with explicit length_tag_name
     auto sink_burst = difi_sink_cpp<>::make(
-        "127.0.0.1", 5004, 1000000, 512, 0, 100, 0, 0, "packet_len", 5000);
+        "127.0.0.1", 5004, 1000000, 512, 0, 100, "packet_len", 5000);
     BOOST_REQUIRE(sink_burst != nullptr);
     BOOST_CHECK_EQUAL(sink_burst->burst_mode(), true);
     BOOST_CHECK_EQUAL(sink_burst->length_tag_name(), "packet_len");
@@ -641,7 +641,7 @@ BOOST_AUTO_TEST_CASE(t_difi_sink_template_instantiations)
 
     // Test RF options in constructor and getters/setters
     auto sink_rf = difi_sink_cpp<>::make(
-        "127.0.0.1", 5005, 1000000, 512, 0, 100, 0, 0, "", 10000,
+        "127.0.0.1", 5005, 1000000, 512, 0, 100, "", 10000,
         1420000000.0, 70000000.0, 8000000.0, 20.0f, -2.0f, 15.0f, 5000.0);
     BOOST_REQUIRE(sink_rf != nullptr);
     BOOST_CHECK_CLOSE(sink_rf->rf_freq(), 1420000000.0, 0.01);

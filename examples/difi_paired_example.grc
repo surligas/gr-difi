@@ -57,8 +57,6 @@ blocks:
     ip_addr: 127.0.0.1
     port: '50003'
     protocol: '1'
-    reference_time_frac: '0'
-    reference_time_full: '18000'
     sample_rate: '100000'
     stream_id: '0'
     type: complex

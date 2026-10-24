@@ -934,7 +934,6 @@ class qa_testcpp(gr_unittest.TestCase):
         sink_std = difi_sink_cpp_sc8(
             '127.0.0.1', 5000, 1000000, 128,
             stream_number=42, context_interval=100,
-            reference_time_full=1000, reference_time_frac=2000,
             context_version=108, protocol=2
         )
         ctx = sink_std.context()
@@ -950,7 +949,6 @@ class qa_testcpp(gr_unittest.TestCase):
         sink_alt = difi_sink_cpp_sc8(
             '127.0.0.1', 5000, 1000000, 128,
             stream_number=42, context_interval=100,
-            reference_time_full=1000, reference_time_frac=2000,
             context_version=72, protocol=2
         )
         ctx_alt = sink_alt.context()

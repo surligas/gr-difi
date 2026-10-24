@@ -8,7 +8,7 @@ label: DIFI Sink
 category: '[DIFI]'
 templates:
   imports: import difi
-  make: difi.difi_sink_cpp_${ 'sc8' if bit_depth == '8' else 'sc16' }(${ip_addr}, ${port}, ${sample_rate}, ${data_size}, ${stream_id}, ${context_packet_send_count}, ${reference_time_full}, ${reference_time_frac}, ${ '""' if mode == 'streaming' else length_tag_name }, int(${lead_time_us}), int(${context_pack_size}), int(${protocol}), float(${rf_freq}), float(${if_freq}), float(${bandwidth}), float(${rf_gain}), float(${if_gain}), float(${ref_level}), float(${if_band_offset}), int(${ref_point}), int(${time_source}))
+  make: difi.difi_sink_cpp_${ 'sc8' if bit_depth == '8' else 'sc16' }(${ip_addr}, ${port}, ${sample_rate}, ${data_size}, ${stream_id}, ${context_packet_send_count}, ${ '""' if mode == 'streaming' else length_tag_name }, int(${lead_time_us}), int(${context_pack_size}), int(${protocol}), float(${rf_freq}), float(${if_freq}), float(${bandwidth}), float(${rf_gain}), float(${if_gain}), float(${ref_level}), float(${if_band_offset}), int(${ref_point}), int(${time_source}))
   callbacks:
   - set_rf_freq(${rf_freq})
   - set_if_freq(${if_freq})
@@ -38,11 +38,6 @@ parameters:
   dtype: string
   default: packet_len
   hide: ${ ('none' if mode == 'burst' else 'all') }
-- id: lead_time_us
-  label: Burst Lead Time (us)
-  dtype: int
-  default: 10000
-  hide: ${ ('none' if mode == 'burst' else 'all') }
 - id: ip_addr
   label: Forwarding IP Address
   dtype: string
@@ -57,80 +52,93 @@ parameters:
   default: '2'
   options: ['1', '2']
   option_labels: ['TCP', 'UDP']
+  hide: part
 - id: sample_rate
   label: Sample Rate
   dtype: int
   default: samp_rate
-- id: reference_time_full
-  label: Reference Time Full
-  dtype: int
-  default: 1666209080
-- id: reference_time_frac
-  label: Reference Time Frac
-  dtype: int
-  default: 964925050735
-- id: time_source
-  label: Time Source (TSI)
-  dtype: enum
-  options: ['3', '1', '2']
-  option_labels: ['POSIX (Unix Epoch, no leap seconds)', 'UTC (1970 Epoch, with leap seconds)', 'GPS (1980 Epoch, no leap seconds)']
-  default: '3'
 - id: data_size
   label: Samples Per Packet
   dtype: int
   default: 128
+  hide: part
 - id: stream_id
   label: Stream ID
   dtype: int
   default: 80000
+  hide: part
 - id: context_packet_send_count
   label: Context packet interval
   dtype: int
   default: 1000
+  hide: part
 - id: context_pack_size
   label: Context Packet Type
   dtype: enum
   options: ['108', '72']
   option_labels: ['Standard (108 bytes)', 'Alternative (72 bytes)']
   default: '108'
+  hide: part
+
+# Time Tab
+- id: time_source
+  label: Time Source (TSI)
+  category: Time
+  dtype: enum
+  options: ['3', '1', '2']
+  option_labels: ['POSIX (Unix Epoch, no leap seconds)', 'UTC (1970 Epoch, with leap seconds)', 'GPS (1980 Epoch, no leap seconds)']
+  default: '3'
+  hide: part
+- id: lead_time_us
+  label: Burst Lead Time (us)
+  category: Time
+  dtype: int
+  default: 10000
+  hide: ${ ('none' if mode == 'burst' else 'all') }
+
+# RF Options Tab
 - id: rf_freq
   label: Center Freq (Hz)
   category: RF Options
   dtype: real
   default: '0'
+  hide: part
 - id: if_freq
   label: IF Freq (Hz)
   category: RF Options
   dtype: real
   default: '0'
+  hide: part
 - id: bandwidth
   label: Bandwidth (Hz)
   category: RF Options
   dtype: real
   default: '0'
+  hide: part
 - id: rf_gain
   label: RF Gain (dB)
   category: RF Options
   dtype: float
   default: '0'
-  hide: ${ ('none' if context_pack_size == '108' else 'all') }
+  hide: ${ ('all' if context_pack_size == '72' else 'part') }
 - id: if_gain
   label: IF Gain (dB)
   category: RF Options
   dtype: float
   default: '0'
-  hide: ${ ('none' if context_pack_size == '108' else 'all') }
+  hide: ${ ('all' if context_pack_size == '72' else 'part') }
 - id: ref_level
   label: Reference Level (dBm)
   category: RF Options
   dtype: float
   default: '0'
-  hide: ${ ('none' if context_pack_size == '108' else 'all') }
+  hide: ${ ('all' if context_pack_size == '72' else 'part') }
 - id: if_band_offset
   label: IF Band Offset (Hz)
   category: RF Options
   dtype: real
   default: '0'
+  hide: part
 - id: ref_point
   label: Reference Point
   category: RF Options
@@ -138,7 +146,7 @@ parameters:
   options: ['100', '75', '25', '0']
   option_labels: ['IF Converter (100 / 0x64)', 'RF Converter (75 / 0x4B)', 'Antenna Feed (25 / 0x19)', 'Unspecified (0)']
   default: '100'
-  hide: ${ ('none' if context_pack_size == '108' else 'all') }
+  hide: ${ ('all' if context_pack_size == '72' else 'part') }
 
 asserts:
 - ${ mode != 'burst' or len(length_tag_name.strip('\"\'')) > 0 }
