@@ -1006,6 +1006,38 @@ class qa_testcpp(gr_unittest.TestCase):
         cid = difi.make_class_id(difi.oui.difi, difi.packet_class.standard_data)
         assert cid == 0x6a621e00000000
 
+        # Test time source (TSI) constructor and getters/setters in Python
+        assert sink_rf.time_source() == difi.tsi_type.posix
+        assert sink_rf.tsi() == difi.tsi_type.posix
+        assert sink_rf.context().tsi == difi.tsi_type.posix
+
+        sink_rf.set_time_source(difi.tsi_type.utc)
+        assert sink_rf.time_source() == difi.tsi_type.utc
+        assert sink_rf.tsi() == difi.tsi_type.utc
+        assert sink_rf.context().tsi == difi.tsi_type.utc
+
+        sink_utc = difi_sink_cpp_sc16(
+            '127.0.0.1', 5002, 2000000, 256,
+            time_source=int(difi.tsi_type.utc)
+        )
+        assert sink_utc.time_source() == difi.tsi_type.utc
+        assert sink_utc.context().tsi == difi.tsi_type.utc
+
+        # Test system_timestamp and static bits helpers
+        posix_full, posix_frac = difi.system_timestamp(0, difi.tsi_type.posix)
+        utc_full, utc_frac = difi.system_timestamp(0, difi.tsi_type.utc)
+        gps_full, gps_frac = difi.system_timestamp(0, difi.tsi_type.gps)
+        assert posix_full > 1700000000
+        assert utc_full > 1700000000
+        assert 1300000000 < gps_full < posix_full
+
+        assert difi.make_data_static_bits(difi.tsi_type.posix) == 0x18e00000
+        assert difi.make_data_static_bits(difi.tsi_type.utc) == 0x18600000
+        assert difi.make_data_static_bits(difi.tsi_type.gps) == 0x18a00000
+        assert difi.make_context_static_bits(difi.tsi_type.posix) == 0x49e00000
+        assert difi.make_context_static_bits(difi.tsi_type.utc) == 0x49600000
+        assert difi.make_context_static_bits(difi.tsi_type.gps) == 0x49a00000
+
 
 # helper functions
 # below

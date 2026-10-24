@@ -96,6 +96,8 @@ difi::header difi::parse_header(const void* buf, size_t len)
     h.frac = frac;
     h.static_bits = w0 & 0xfff00000;
     h.raw_header = w0;
+    h.tsi = static_cast<tsi_type>((w0 >> 22) & 0x03);
+    h.tsf = static_cast<tsf_type>((w0 >> 20) & 0x03);
 
     return h;
 }
@@ -109,12 +111,16 @@ void difi::pack_header(void* buf, const header& header)
         uint32_t static_part = header.static_bits;
         if (static_part == 0) {
             if (header.type == packet_type::context) {
-                static_part = STANDARD_CONTEXT_STATIC_BITS;
+                static_part = make_context_static_bits(
+                    header.tsi != tsi_type::none ? header.tsi : tsi_type::posix,
+                    header.tsf != tsf_type::none ? header.tsf : tsf_type::picoseconds);
             } else if (header.type == packet_type::version) {
                 static_part = (static_cast<uint32_t>(packet_type::version) << 28) |
                               (STANDARD_CONTEXT_STATIC_BITS & 0x0fffffff);
             } else {
-                static_part = STANDARD_DATA_STATIC_BITS;
+                static_part = make_data_static_bits(
+                    header.tsi != tsi_type::none ? header.tsi : tsi_type::posix,
+                    header.tsf != tsf_type::none ? header.tsf : tsf_type::picoseconds);
             }
         } else if (header.type != packet_type::unknown) {
             static_part =
@@ -145,6 +151,9 @@ difi::parse_context<difi::context_version::standard>(const void* buf, size_t len
     ctx.packet_size = len;
     ctx.raw.resize(len);
     std::memcpy(ctx.raw.data(), in, len);
+
+    uint32_t w0 = unpack_u32(in);
+    ctx.tsi = static_cast<tsi_type>((w0 >> 22) & 0x03);
 
     int idx = 0;
     ctx.class_id = unpack_u64(&in[CONTEXT_PACKET_OFFSETS[idx++]]);
@@ -234,7 +243,7 @@ void difi::pack_context<difi::context_version::standard>(
 
     std::fill(out.begin(), out.end(), 0);
 
-    uint32_t header = STANDARD_CONTEXT_STATIC_BITS |
+    uint32_t header = make_context_static_bits(ctx.tsi) |
                       (static_cast<uint32_t>(pkt_n & 0x0f) << 16) |
                       static_cast<uint32_t>(out.size() / 4);
 
@@ -415,6 +424,7 @@ difi::make_context<difi::context_version::standard>(const difi::context_config& 
     ctx.payload_format = (cfg.depth == 8)
                              ? static_cast<uint64_t>(payload_format::sc8_link_efficient)
                              : static_cast<uint64_t>(payload_format::sc16_link_efficient);
+    ctx.tsi = cfg.tsi;
     ctx.packet_size = STANDARD_CONTEXT_SIZE;
 
     auto packed = pack_context(ctx, 0, cfg.stream_id, STANDARD_CONTEXT_SIZE);
@@ -461,17 +471,33 @@ difi::context_variant difi::make_context(context_version version,
     return make_context<context_version::standard>(cfg);
 }
 
-std::pair<uint32_t, uint64_t> difi::system_timestamp(uint32_t lead_time_us)
+std::pair<uint32_t, uint64_t> difi::system_timestamp(uint32_t lead_time_us, tsi_type tsi)
 {
-    auto now = std::chrono::system_clock::now();
-    auto now_s = std::chrono::time_point_cast<std::chrono::seconds>(now);
-    auto frac_duration = now - now_s;
+    uint32_t full = 0;
+    uint64_t frac = 0;
 
-    uint32_t full = static_cast<uint32_t>(now_s.time_since_epoch().count());
-    uint64_t frac =
-        static_cast<uint64_t>(
+    auto calc = [&](auto now) {
+        auto now_s = std::chrono::time_point_cast<std::chrono::seconds>(now);
+        auto frac_duration = now - now_s;
+        full = static_cast<uint32_t>(now_s.time_since_epoch().count());
+        frac = static_cast<uint64_t>(
             std::chrono::duration_cast<std::chrono::nanoseconds>(frac_duration).count()) *
-        1000ULL;
+            1000ULL;
+    };
+
+    switch (tsi) {
+    case tsi_type::utc:
+        calc(std::chrono::utc_clock::now());
+        break;
+    case tsi_type::gps:
+        calc(std::chrono::gps_clock::now());
+        break;
+    case tsi_type::posix:
+    case tsi_type::none:
+    default:
+        calc(std::chrono::system_clock::now());
+        break;
+    }
 
     if (lead_time_us > 0) {
         frac += static_cast<uint64_t>(lead_time_us) * 1000000ULL;
@@ -827,6 +853,9 @@ pmt::pmt_t difi::context_to_pmt(const header& header, const standard_context& ct
         dict = pmt::dict_add(dict,
                              pmt::intern("timestamp_calibration_time"),
                              pmt::from_uint64(ctx.timestamp_calibration_time));
+        dict = pmt::dict_add(dict,
+                             pmt::intern("tsi"),
+                             pmt::from_long(static_cast<int>(ctx.tsi)));
     }
 
     return dict;
@@ -941,6 +970,11 @@ difi::pmt_to_context<difi::context_version::standard>(pmt::pmt_t dict)
     auto p_ref_point = get_val("reference_point");
     if (pmt::is_integer(p_ref_point)) {
         ctx.ref_point = static_cast<reference_point>(pmt::to_long(p_ref_point));
+    }
+
+    auto p_tsi = get_val("tsi");
+    if (pmt::is_integer(p_tsi)) {
+        ctx.tsi = static_cast<tsi_type>(pmt::to_long(p_tsi));
     }
 
     auto p_adj = get_val("timestamp_adjustment");

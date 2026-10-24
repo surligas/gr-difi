@@ -51,6 +51,7 @@ namespace gr {
         pmt::pmt_t m_length_tag_key;
         uint64_t d_burst_samples_remaining;
         uint32_t d_lead_time_us;
+        difi::tsi_type m_time_source;
         uint32_t d_full;
         uint64_t d_frac;
         uint32_t d_data_len;
@@ -71,7 +72,8 @@ namespace gr {
                         double rf_freq = 0.0, double if_freq = 0.0, double bandwidth = 0.0,
                         float rf_gain = 0.0f, float if_gain = 0.0f, float ref_level = 0.0f,
                         double if_band_offset = 0.0,
-                        difi::reference_point ref_point = difi::reference_point::if_converter);
+                        difi::reference_point ref_point = difi::reference_point::if_converter,
+                        difi::tsi_type time_source = difi::tsi_type::posix);
       ~difi_sink_cpp_impl() override = default;
 
       // Where all the action really happens
@@ -178,6 +180,16 @@ namespace gr {
               return difi::reference_point::unspecified;
           }
       }
+
+      void set_time_source(difi::tsi_type tsi) override
+      {
+          m_time_source = tsi;
+          d_static_bits = difi::make_data_static_bits(m_time_source);
+          if constexpr (V == difi::context_version::standard) {
+              m_context.tsi = m_time_source;
+          }
+      }
+      difi::tsi_type time_source() const override { return m_time_source; }
 
       const difi::context<V>& typed_context() const { return m_context; }
       void set_typed_context(const difi::context<V>& ctx) { m_context = ctx; }

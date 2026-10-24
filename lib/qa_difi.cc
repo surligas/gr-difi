@@ -666,6 +666,17 @@ BOOST_AUTO_TEST_CASE(t_difi_sink_template_instantiations)
     BOOST_CHECK_CLOSE(ctx_rf.rf_ref_freq, 2400000000.0, 0.01);
     BOOST_CHECK_CLOSE(ctx_rf.rf_gain, 30.0f, 0.1);
     BOOST_CHECK_CLOSE(ctx_rf.bandwidth, 10000000.0, 0.01);
+
+    // Time source (TSI) default and runtime setter
+    BOOST_CHECK(sink_rf->time_source() == difi::tsi_type::posix);
+    BOOST_CHECK(sink_rf->tsi() == difi::tsi_type::posix);
+    BOOST_CHECK(ctx_rf.tsi == difi::tsi_type::posix);
+
+    sink_rf->set_time_source(difi::tsi_type::utc);
+    BOOST_CHECK(sink_rf->time_source() == difi::tsi_type::utc);
+    BOOST_CHECK(sink_rf->tsi() == difi::tsi_type::utc);
+    auto ctx_utc = std::get<standard_context>(sink_rf->context());
+    BOOST_CHECK(ctx_utc.tsi == difi::tsi_type::utc);
 }
 
 BOOST_AUTO_TEST_CASE(t_make_context_standard_defaults)
@@ -893,6 +904,50 @@ BOOST_AUTO_TEST_CASE(t_reference_point_round_trip)
         auto pmt_dict = difi::context_to_pmt(hdr, ctx);
         auto from_pmt = difi::pmt_to_context<difi::context_version::standard>(pmt_dict);
         BOOST_CHECK(from_pmt.ref_point == ctx.ref_point);
+        BOOST_CHECK(from_pmt.tsi == ctx.tsi);
     }
+}
+
+BOOST_AUTO_TEST_CASE(t_system_timestamp_time_sources)
+{
+    // POSIX timestamp
+    auto [posix_full, posix_frac] = difi::system_timestamp(0, difi::tsi_type::posix);
+    BOOST_CHECK(posix_full > 1700000000U);
+    BOOST_CHECK(posix_frac < difi::PICO_CONVERSION);
+
+    // UTC timestamp
+    auto [utc_full, utc_frac] = difi::system_timestamp(0, difi::tsi_type::utc);
+    BOOST_CHECK(utc_full > 1700000000U);
+    BOOST_CHECK(utc_frac < difi::PICO_CONVERSION);
+
+    // GPS timestamp (epoch Jan 6 1980; ~315964800s difference from 1970)
+    auto [gps_full, gps_frac] = difi::system_timestamp(0, difi::tsi_type::gps);
+    BOOST_CHECK(gps_full > 1300000000U && gps_full < posix_full);
+    BOOST_CHECK(gps_frac < difi::PICO_CONVERSION);
+
+    // Lead time addition
+    auto [lead_full, lead_frac] = difi::system_timestamp(1000000, difi::tsi_type::posix);
+    BOOST_CHECK(lead_full >= posix_full + 1 || (lead_full == posix_full && lead_frac > posix_frac));
+
+    // make_data_static_bits and make_context_static_bits
+    BOOST_CHECK_EQUAL(difi::make_data_static_bits(difi::tsi_type::posix), 0x18e00000U);
+    BOOST_CHECK_EQUAL(difi::make_data_static_bits(difi::tsi_type::utc), 0x18600000U);
+    BOOST_CHECK_EQUAL(difi::make_data_static_bits(difi::tsi_type::gps), 0x18a00000U);
+
+    BOOST_CHECK_EQUAL(difi::make_context_static_bits(difi::tsi_type::posix), 0x49e00000U);
+    BOOST_CHECK_EQUAL(difi::make_context_static_bits(difi::tsi_type::utc), 0x49600000U);
+    BOOST_CHECK_EQUAL(difi::make_context_static_bits(difi::tsi_type::gps), 0x49a00000U);
+
+    // Header parsing extracting TSI/TSF
+    difi::header h_data;
+    h_data.type = difi::packet_type::data;
+    h_data.tsi = difi::tsi_type::utc;
+    h_data.tsf = difi::tsf_type::picoseconds;
+    std::vector<uint8_t> buf(difi::DIFI_HEADER_SIZE, 0);
+    difi::pack_header(buf.data(), h_data);
+
+    auto parsed_hdr = difi::parse_header(buf.data(), buf.size());
+    BOOST_CHECK(parsed_hdr.tsi == difi::tsi_type::utc);
+    BOOST_CHECK(parsed_hdr.tsf == difi::tsf_type::picoseconds);
 }
 

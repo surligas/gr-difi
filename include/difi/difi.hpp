@@ -207,6 +207,8 @@ public:
         uint64_t frac = 0;              ///< Fractional picoseconds timestamp (words 5-6)
         uint32_t static_bits = 0;       ///< Header static bits (bits 31-20)
         uint32_t raw_header = 0;        ///< Raw header word 0
+        tsi_type tsi = tsi_type::none;  ///< Timestamp Integer type (bits 23-22)
+        tsf_type tsf = tsf_type::none;  ///< Timestamp Fractional type (bits 21-20)
     };
 
     // --- Wire Format Constants ---
@@ -264,6 +266,38 @@ public:
         return (w3 << 32) | w4;
     }
 
+    /**
+     * @brief Generates header static bits (bits 31-20) for a data packet.
+     *
+     * @param tsi Timestamp Integer type (default: tsi_type::posix)
+     * @param tsf Timestamp Fractional type (default: tsf_type::picoseconds)
+     * @return uint32_t static bits with packet type 1 (Data) and Class ID present
+     */
+    static constexpr uint32_t make_data_static_bits(
+        tsi_type tsi = tsi_type::posix,
+        tsf_type tsf = tsf_type::picoseconds)
+    {
+        return 0x18000000U |
+               ((static_cast<uint32_t>(tsi) & 0x3U) << 22) |
+               ((static_cast<uint32_t>(tsf) & 0x3U) << 20);
+    }
+
+    /**
+     * @brief Generates header static bits (bits 31-20) for a standard context packet.
+     *
+     * @param tsi Timestamp Integer type (default: tsi_type::posix)
+     * @param tsf Timestamp Fractional type (default: tsf_type::picoseconds)
+     * @return uint32_t static bits with packet type 4 (Context) and Class ID present
+     */
+    static constexpr uint32_t make_context_static_bits(
+        tsi_type tsi = tsi_type::posix,
+        tsf_type tsf = tsf_type::picoseconds)
+    {
+        return 0x49000000U |
+               ((static_cast<uint32_t>(tsi) & 0x3U) << 22) |
+               ((static_cast<uint32_t>(tsf) & 0x3U) << 20);
+    }
+
     // --- Context Representation Templates ---
 
     /**
@@ -303,6 +337,7 @@ public:
         reference_point ref_point =
             reference_point::if_converter;       ///< Reference point (default: if_converter = 100 / 0x64)
         uint32_t state_and_event_indicators = 0; ///< State and event indicators (0 defaults to DEFAULT_STATE_AND_EVENTS)
+        tsi_type tsi = tsi_type::posix;          ///< Timestamp Integer time source (default: posix)
     };
 
     // --- Byte-Order Serialization Helpers ---
@@ -669,13 +704,18 @@ public:
     // --- Timestamp Arithmetic ---
 
     /**
-     * @brief Generates a DIFI timestamp from the host wall-clock (UTC / POSIX).
+     * @brief Generates a DIFI timestamp from the host wall-clock for a given time source.
+     *
+     * Supports POSIX (std::chrono::system_clock, no leap seconds), UTC (std::chrono::utc_clock,
+     * includes leap seconds), and GPS (std::chrono::gps_clock, epoch Jan 6 1980).
      *
      * @param lead_time_us optional lead time in microseconds to add into the future
-     * @return std::pair<uint32_t, uint64_t> {full, frac} where full is POSIX seconds
+     * @param tsi Timestamp Integer time source (default: tsi_type::posix)
+     * @return std::pair<uint32_t, uint64_t> {full, frac} where full is seconds
      *         and frac is fractional picoseconds (0..999,999,999,999).
      */
-    static std::pair<uint32_t, uint64_t> system_timestamp(uint32_t lead_time_us = 0);
+    static std::pair<uint32_t, uint64_t> system_timestamp(uint32_t lead_time_us = 0,
+                                                          tsi_type tsi = tsi_type::posix);
 
     /**
      * @brief Advances a DIFI timestamp by a given number of samples.
@@ -868,6 +908,7 @@ struct DIFI_API difi::context<difi::context_version::standard> {
     uint32_t timestamp_calibration_time = 0;    ///< Timestamp calibration time in seconds
     uint32_t state_and_event_indicators = 0;    ///< State and event indicator field
     uint64_t payload_format = 0;                ///< Data packet payload format field
+    tsi_type tsi = tsi_type::posix;             ///< Timestamp Integer time source
     size_t packet_size = STANDARD_CONTEXT_SIZE; ///< Packet size in bytes (108)
     std::vector<int8_t> raw;                    ///< Raw bytes of the context packet
 };

@@ -91,6 +91,11 @@ namespace gr {
 
       virtual void set_ref_point(difi::reference_point rp) = 0;
       virtual difi::reference_point ref_point() const = 0;
+
+      virtual void set_time_source(difi::tsi_type tsi) = 0;
+      virtual difi::tsi_type time_source() const = 0;
+      void set_tsi(difi::tsi_type tsi) { set_time_source(tsi); }
+      difi::tsi_type tsi() const { return time_source(); }
     };
 
     /**
@@ -135,7 +140,8 @@ namespace gr {
           float if_gain = 0.0f,
           float ref_level = 0.0f,
           double if_band_offset = 0.0,
-          difi::reference_point ref_point = difi::reference_point::if_converter);
+          difi::reference_point ref_point = difi::reference_point::if_converter,
+          difi::tsi_type time_source = difi::tsi_type::posix);
     };
 
     typedef difi_sink_base difi_sink_cpp_sc8;

@@ -37,7 +37,8 @@ difi_sink_cpp<V, Transport, BitDepth>::make(std::string ip_addr,
                                             float if_gain,
                                             float ref_level,
                                             double if_band_offset,
-                                            difi::reference_point ref_point)
+                                            difi::reference_point ref_point,
+                                            difi::tsi_type time_source)
 {
     return gnuradio::make_block_sptr<difi_sink_cpp_impl<V, Transport, BitDepth>>(
         ip_addr,
@@ -57,7 +58,8 @@ difi_sink_cpp<V, Transport, BitDepth>::make(std::string ip_addr,
         if_gain,
         ref_level,
         if_band_offset,
-        ref_point);
+        ref_point,
+        time_source);
 }
 
 template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
@@ -80,7 +82,8 @@ difi_sink_cpp_impl<V, Transport, BitDepth>::difi_sink_cpp_impl(
     float if_gain,
     float ref_level,
     double if_band_offset,
-    difi::reference_point ref_point)
+    difi::reference_point ref_point,
+    difi::tsi_type time_source)
     : gr::sync_block("difi_sink_cpp_impl",
                      gr::io_signature::make(1, 1, sizeof(sample_t)),
                      gr::io_signature::make(0, 0, 0)),
@@ -112,7 +115,8 @@ difi_sink_cpp_impl<V, Transport, BitDepth>::difi_sink_cpp_impl(
     d_lead_time_us = lead_time_us;
     d_full = reference_time_full;
     d_frac = reference_time_frac;
-    d_static_bits = difi::STANDARD_DATA_STATIC_BITS;
+    m_time_source = time_source;
+    d_static_bits = difi::make_data_static_bits(m_time_source);
     d_samples_per_packet = samples_per_packet;
     d_data_len = samples_per_packet * s_bytes_per_sample;
 
@@ -130,6 +134,7 @@ difi_sink_cpp_impl<V, Transport, BitDepth>::difi_sink_cpp_impl(
         .full = reference_time_full,
         .frac = reference_time_frac,
         .ref_point = ref_point,
+        .tsi = time_source,
     });
     m_context_buffer.resize(m_context.packet_size);
 
@@ -142,7 +147,7 @@ template <difi::context_version V, sink_transport Transport, difi::bit_depth Bit
 requires valid_bit_depth<BitDepth>
 void difi_sink_cpp_impl<V, Transport, BitDepth>::reanchor_timestamp()
 {
-    auto [full, frac] = difi::system_timestamp(d_lead_time_us);
+    auto [full, frac] = difi::system_timestamp(d_lead_time_us, m_time_source);
     d_full = full;
     d_frac = frac;
     d_samples_since_last_reference = 0;
@@ -322,6 +327,7 @@ void difi_sink_cpp_impl<V, Transport, BitDepth>::send_context()
         auto [full, frac] = add_frac_full();
         m_context.full = full;
         m_context.frac = frac;
+        m_context.tsi = m_time_source;
     }
     difi::pack_context(m_context,
                        d_context_packet_count,
