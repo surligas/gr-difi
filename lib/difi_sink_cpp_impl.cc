@@ -36,7 +36,8 @@ difi_sink_cpp<V, Transport, BitDepth>::make(std::string ip_addr,
                                             float rf_gain,
                                             float if_gain,
                                             float ref_level,
-                                            double if_band_offset)
+                                            double if_band_offset,
+                                            difi::reference_point ref_point)
 {
     return gnuradio::make_block_sptr<difi_sink_cpp_impl<V, Transport, BitDepth>>(
         ip_addr,
@@ -55,7 +56,8 @@ difi_sink_cpp<V, Transport, BitDepth>::make(std::string ip_addr,
         rf_gain,
         if_gain,
         ref_level,
-        if_band_offset);
+        if_band_offset,
+        ref_point);
 }
 
 template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
@@ -77,7 +79,8 @@ difi_sink_cpp_impl<V, Transport, BitDepth>::difi_sink_cpp_impl(
     float rf_gain,
     float if_gain,
     float ref_level,
-    double if_band_offset)
+    double if_band_offset,
+    difi::reference_point ref_point)
     : gr::sync_block("difi_sink_cpp_impl",
                      gr::io_signature::make(1, 1, sizeof(sample_t)),
                      gr::io_signature::make(0, 0, 0)),
@@ -126,10 +129,12 @@ difi_sink_cpp_impl<V, Transport, BitDepth>::difi_sink_cpp_impl(
         .ref_level = ref_level,
         .full = reference_time_full,
         .frac = reference_time_frac,
+        .ref_point = ref_point,
     });
     m_context_buffer.resize(m_context.packet_size);
 
-    m_class_id = m_context.class_id ^ 1;
+    m_class_id = (m_context.class_id & ~0xffffULL) |
+                 static_cast<uint16_t>(difi::packet_class::standard_data);
     m_data_buffer.resize(difi::DIFI_HEADER_SIZE + d_data_len);
 }
 

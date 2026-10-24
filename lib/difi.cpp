@@ -76,7 +76,7 @@ difi::header difi::parse_header(const void* buf, size_t len)
     } else if (type_val == static_cast<uint8_t>(packet_type::context)) {
         // In DIFI v1.2.1, version flow packets use context pktType 0x4 with
         // packetClassCode 0x0004
-        if ((cid & 0xffff) == 0x0004) {
+        if ((cid & 0xffff) == static_cast<uint16_t>(packet_class::version_context)) {
             h.type = packet_type::version;
         } else {
             h.type = packet_type::context;
@@ -151,7 +151,7 @@ difi::parse_context<difi::context_version::standard>(const void* buf, size_t len
     ctx.full = unpack_u32(&in[CONTEXT_PACKET_OFFSETS[idx++]]);
     ctx.frac = unpack_u64(&in[CONTEXT_PACKET_OFFSETS[idx++]]);
     ctx.cif = unpack_u32(&in[CONTEXT_PACKET_OFFSETS[idx++]]);
-    ctx.ref_point = unpack_u32(&in[CONTEXT_PACKET_OFFSETS[idx++]]);
+    ctx.ref_point = static_cast<reference_point>(unpack_u32(&in[CONTEXT_PACKET_OFFSETS[idx++]]));
     ctx.bandwidth = vita_fixed_to_double(unpack_u64(&in[CONTEXT_PACKET_OFFSETS[idx++]]));
     ctx.if_ref_freq =
         vita_fixed_to_double(unpack_u64(&in[CONTEXT_PACKET_OFFSETS[idx++]]));
@@ -245,9 +245,12 @@ void difi::pack_context<difi::context_version::standard>(
     pack_u64(&out[CONTEXT_PACKET_OFFSETS[idx++]], ctx.class_id);
     pack_u32(&out[CONTEXT_PACKET_OFFSETS[idx++]], ctx.full);
     pack_u64(&out[CONTEXT_PACKET_OFFSETS[idx++]], ctx.frac);
-    pack_u32(&out[CONTEXT_PACKET_OFFSETS[idx++]], ctx.cif != 0 ? ctx.cif : 0xfbb98000U);
     pack_u32(&out[CONTEXT_PACKET_OFFSETS[idx++]],
-             ctx.ref_point != 0 ? ctx.ref_point : 0x64U);
+             ctx.cif != 0 ? ctx.cif : static_cast<uint32_t>(cif_mask::standard_with_change));
+    pack_u32(&out[CONTEXT_PACKET_OFFSETS[idx++]],
+             ctx.ref_point != reference_point::unspecified
+                 ? static_cast<uint32_t>(ctx.ref_point)
+                 : static_cast<uint32_t>(reference_point::if_converter));
     pack_u64(&out[CONTEXT_PACKET_OFFSETS[idx++]], double_to_vita_fixed(ctx.bandwidth));
     pack_u64(&out[CONTEXT_PACKET_OFFSETS[idx++]], double_to_vita_fixed(ctx.if_ref_freq));
     pack_u64(&out[CONTEXT_PACKET_OFFSETS[idx++]], double_to_vita_fixed(ctx.rf_ref_freq));
@@ -270,7 +273,7 @@ void difi::pack_context<difi::context_version::standard>(
     pack_u32(&out[CONTEXT_PACKET_OFFSETS[idx++]],
              ctx.state_and_event_indicators != 0
                  ? ctx.state_and_event_indicators
-                 : static_cast<uint32_t>(DEFAULT_STATE_AND_EVENTS));
+                 : static_cast<uint32_t>(state_and_event::default_indicators));
     pack_u64(&out[CONTEXT_PACKET_OFFSETS[idx++]], ctx.payload_format);
 }
 
@@ -297,7 +300,7 @@ void difi::pack_context<difi::context_version::alternative>(
     int idx = 0;
     pack_u64(&out[CONTEXT_PACKET_ALT_OFFSETS[idx++]], ctx.class_id);
     pack_u32(&out[CONTEXT_PACKET_ALT_OFFSETS[idx++]],
-             ctx.cif != 0 ? ctx.cif : 966885376U);
+             ctx.cif != 0 ? ctx.cif : static_cast<uint32_t>(cif_mask::alternative_fields));
     pack_u64(&out[CONTEXT_PACKET_ALT_OFFSETS[idx++]],
              double_to_vita_fixed(ctx.bandwidth));
     pack_u64(&out[CONTEXT_PACKET_ALT_OFFSETS[idx++]],
@@ -311,7 +314,7 @@ void difi::pack_context<difi::context_version::alternative>(
     pack_u32(&out[CONTEXT_PACKET_ALT_OFFSETS[idx++]],
              ctx.state_and_event_indicators != 0
                  ? ctx.state_and_event_indicators
-                 : static_cast<uint32_t>(DEFAULT_STATE_AND_EVENTS));
+                 : static_cast<uint32_t>(state_and_event::default_indicators));
     pack_u64(&out[CONTEXT_PACKET_ALT_OFFSETS[idx++]], ctx.payload_format);
 }
 
@@ -385,11 +388,15 @@ difi::standard_context
 difi::make_context<difi::context_version::standard>(const difi::context_config& cfg)
 {
     standard_context ctx;
-    ctx.class_id = (cfg.class_id != 0) ? cfg.class_id : ((STANDARD_OUI << 32) ^ 1);
+    ctx.class_id = (cfg.class_id != 0)
+                       ? cfg.class_id
+                       : make_class_id(oui::difi, packet_class::standard_context);
     ctx.full = cfg.full;
     ctx.frac = cfg.frac;
-    ctx.cif = (cfg.cif != 0) ? cfg.cif : 0xfbb98000U;
-    ctx.ref_point = (cfg.ref_point != 0) ? cfg.ref_point : 0x64U;
+    ctx.cif = (cfg.cif != 0) ? cfg.cif : static_cast<uint32_t>(cif_mask::standard_with_change);
+    ctx.ref_point = (cfg.ref_point != reference_point::unspecified)
+                        ? cfg.ref_point
+                        : reference_point::if_converter;
     ctx.sample_rate = cfg.sample_rate;
     ctx.bandwidth = (cfg.bandwidth > 0.0) ? cfg.bandwidth : cfg.sample_rate;
     ctx.if_ref_freq = cfg.if_freq;
@@ -402,10 +409,12 @@ difi::make_context<difi::context_version::standard>(const difi::context_config& 
     ctx.timestamp_calibration_time =
         (cfg.timestamp_calibration_time != 0) ? cfg.timestamp_calibration_time : cfg.full;
     ctx.state_and_event_indicators =
-        (cfg.state_and_event_indicators != 0) ? cfg.state_and_event_indicators
-                                              : static_cast<uint32_t>(DEFAULT_STATE_AND_EVENTS);
-    ctx.payload_format = (cfg.depth == 8) ? EIGHT_BIT_SIGNED_CART_LINK_EFF
-                                          : SIXTEEN_BIT_SIGNED_CART_LINK_EFF;
+        (cfg.state_and_event_indicators != 0)
+            ? cfg.state_and_event_indicators
+            : static_cast<uint32_t>(state_and_event::default_indicators);
+    ctx.payload_format = (cfg.depth == 8)
+                             ? static_cast<uint64_t>(payload_format::sc8_link_efficient)
+                             : static_cast<uint64_t>(payload_format::sc16_link_efficient);
     ctx.packet_size = STANDARD_CONTEXT_SIZE;
 
     auto packed = pack_context(ctx, 0, cfg.stream_id, STANDARD_CONTEXT_SIZE);
@@ -419,18 +428,22 @@ difi::alternative_context
 difi::make_context<difi::context_version::alternative>(const difi::context_config& cfg)
 {
     alternative_context ctx;
-    ctx.class_id = (cfg.class_id != 0) ? cfg.class_id : ((ALT_OUI << 32) ^ 1);
-    ctx.cif = (cfg.cif != 0) ? cfg.cif : 966885376U;
+    ctx.class_id = (cfg.class_id != 0)
+                       ? cfg.class_id
+                       : make_class_id(oui::vita, packet_class::standard_context);
+    ctx.cif = (cfg.cif != 0) ? cfg.cif : static_cast<uint32_t>(cif_mask::alternative_fields);
     ctx.sample_rate = cfg.sample_rate;
     ctx.bandwidth = (cfg.bandwidth > 0.0) ? cfg.bandwidth : cfg.sample_rate;
     ctx.if_ref_freq = cfg.if_freq;
     ctx.rf_ref_freq = cfg.rf_freq;
     ctx.if_band_offset = cfg.if_band_offset;
     ctx.state_and_event_indicators =
-        (cfg.state_and_event_indicators != 0) ? cfg.state_and_event_indicators
-                                              : static_cast<uint32_t>(DEFAULT_STATE_AND_EVENTS);
-    ctx.payload_format = (cfg.depth == 8) ? EIGHT_BIT_SIGNED_CART_LINK_EFF
-                                          : SIXTEEN_BIT_SIGNED_CART_LINK_EFF;
+        (cfg.state_and_event_indicators != 0)
+            ? cfg.state_and_event_indicators
+            : static_cast<uint32_t>(state_and_event::default_indicators);
+    ctx.payload_format = (cfg.depth == 8)
+                             ? static_cast<uint64_t>(payload_format::sc8_link_efficient)
+                             : static_cast<uint64_t>(payload_format::sc16_link_efficient);
     ctx.packet_size = ALT_CONTEXT_SIZE;
 
     auto packed = pack_context(ctx, 0, cfg.stream_id, ALT_CONTEXT_SIZE);
@@ -476,11 +489,11 @@ difi::standard_context difi::make_default_context<difi::context_version::standar
     double samp_rate, int depth, uint32_t stream_id, uint32_t full, uint64_t frac)
 {
     standard_context ctx;
-    ctx.class_id = (STANDARD_OUI << 32) ^ 1;
+    ctx.class_id = make_class_id(oui::difi, packet_class::standard_context);
     ctx.full = full;
     ctx.frac = frac;
-    ctx.cif = 0xfbb98000U;
-    ctx.ref_point = 0x64;
+    ctx.cif = static_cast<uint32_t>(cif_mask::standard_with_change);
+    ctx.ref_point = reference_point::if_converter;
     ctx.bandwidth = samp_rate * 0.8;
     ctx.if_ref_freq = 100000000.0;
     ctx.rf_ref_freq = 7500000000.0;
@@ -491,9 +504,10 @@ difi::standard_context difi::make_default_context<difi::context_version::standar
     ctx.sample_rate = samp_rate;
     ctx.timestamp_adjustment = static_cast<int64_t>(1e-5 * 1e15); // 10 us in fs
     ctx.timestamp_calibration_time = full;
-    ctx.state_and_event_indicators = static_cast<uint32_t>(DEFAULT_STATE_AND_EVENTS);
+    ctx.state_and_event_indicators = static_cast<uint32_t>(state_and_event::default_indicators);
     ctx.payload_format =
-        (depth == 8) ? EIGHT_BIT_SIGNED_CART_LINK_EFF : SIXTEEN_BIT_SIGNED_CART_LINK_EFF;
+        (depth == 8) ? static_cast<uint64_t>(payload_format::sc8_link_efficient)
+                     : static_cast<uint64_t>(payload_format::sc16_link_efficient);
     ctx.packet_size = STANDARD_CONTEXT_SIZE;
 
     auto packed = pack_context(ctx, 0, stream_id, STANDARD_CONTEXT_SIZE);
@@ -509,16 +523,17 @@ difi::alternative_context difi::make_default_context<difi::context_version::alte
     (void)full;
     (void)frac;
     alternative_context ctx;
-    ctx.class_id = (ALT_OUI << 32) ^ 1;
-    ctx.cif = 966885376U;
+    ctx.class_id = make_class_id(oui::vita, packet_class::standard_context);
+    ctx.cif = static_cast<uint32_t>(cif_mask::alternative_fields);
     ctx.bandwidth = samp_rate * 0.8;
     ctx.if_ref_freq = 0.0;
     ctx.rf_ref_freq = 0.0;
     ctx.if_band_offset = 0.0;
     ctx.sample_rate = samp_rate;
-    ctx.state_and_event_indicators = static_cast<uint32_t>(DEFAULT_STATE_AND_EVENTS);
+    ctx.state_and_event_indicators = static_cast<uint32_t>(state_and_event::default_indicators);
     ctx.payload_format =
-        (depth == 8) ? EIGHT_BIT_SIGNED_CART_LINK_EFF : SIXTEEN_BIT_SIGNED_CART_LINK_EFF;
+        (depth == 8) ? static_cast<uint64_t>(payload_format::sc8_link_efficient)
+                     : static_cast<uint64_t>(payload_format::sc16_link_efficient);
     ctx.packet_size = ALT_CONTEXT_SIZE;
 
     auto packed = pack_context(ctx, 0, stream_id, ALT_CONTEXT_SIZE);
@@ -536,11 +551,11 @@ difi::standard_context difi::make_default_context(double samp_rate,
 {
     if (packet_size == ALT_CONTEXT_SIZE) {
         standard_context ctx;
-        ctx.class_id = (ALT_OUI << 32) ^ 1;
+        ctx.class_id = make_class_id(oui::vita, packet_class::standard_context);
         ctx.full = full;
         ctx.frac = frac;
-        ctx.cif = 966885376U;
-        ctx.ref_point = 0x64;
+        ctx.cif = static_cast<uint32_t>(cif_mask::alternative_fields);
+        ctx.ref_point = reference_point::if_converter;
         ctx.bandwidth = samp_rate * 0.8;
         ctx.if_ref_freq = 100000000.0;
         ctx.rf_ref_freq = 7500000000.0;
@@ -801,7 +816,7 @@ pmt::pmt_t difi::context_to_pmt(const header& header, const standard_context& ct
 
     if (ctx.packet_size != ALT_CONTEXT_SIZE) {
         dict = pmt::dict_add(
-            dict, pmt::intern("reference_point"), pmt::from_long(ctx.ref_point));
+            dict, pmt::intern("reference_point"), pmt::from_long(static_cast<uint32_t>(ctx.ref_point)));
         dict = pmt::dict_add(
             dict, pmt::intern("reference_level"), pmt::from_float(ctx.ref_level));
         dict = pmt::dict_add(dict, pmt::intern("rf_gain"), pmt::from_float(ctx.rf_gain));
@@ -921,6 +936,23 @@ difi::pmt_to_context<difi::context_version::standard>(pmt::pmt_t dict)
     auto p_ref_lvl = get_val("reference_level");
     if (pmt::is_real(p_ref_lvl)) {
         ctx.ref_level = static_cast<float>(pmt::to_double(p_ref_lvl));
+    }
+
+    auto p_ref_point = get_val("reference_point");
+    if (pmt::is_integer(p_ref_point)) {
+        ctx.ref_point = static_cast<reference_point>(pmt::to_long(p_ref_point));
+    }
+
+    auto p_adj = get_val("timestamp_adjustment");
+    if (pmt::is_integer(p_adj)) {
+        ctx.timestamp_adjustment = pmt::to_long(p_adj);
+    }
+
+    auto p_cal = get_val("timestamp_calibration_time");
+    if (pmt::is_uint64(p_cal)) {
+        ctx.timestamp_calibration_time = static_cast<uint32_t>(pmt::to_uint64(p_cal));
+    } else if (pmt::is_integer(p_cal)) {
+        ctx.timestamp_calibration_time = static_cast<uint32_t>(pmt::to_long(p_cal));
     }
 
     auto p_rf_gain = get_val("rf_gain");

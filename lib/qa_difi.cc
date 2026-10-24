@@ -796,3 +796,103 @@ BOOST_AUTO_TEST_CASE(t_system_timestamp)
     }
 }
 
+BOOST_AUTO_TEST_CASE(t_documented_enumerations_and_class_id)
+{
+    // Reference point identifiers per IEEE-ISTO 4900-2021 Section 5.2
+    BOOST_CHECK_EQUAL(static_cast<uint32_t>(difi::reference_point::unspecified), 0U);
+    BOOST_CHECK_EQUAL(static_cast<uint32_t>(difi::reference_point::antenna_feed), 25U);
+    BOOST_CHECK_EQUAL(static_cast<uint32_t>(difi::reference_point::rf_converter), 75U);
+    BOOST_CHECK_EQUAL(static_cast<uint32_t>(difi::reference_point::if_converter), 100U);
+
+    // Packet classes per Section 4.3
+    BOOST_CHECK_EQUAL(static_cast<uint16_t>(difi::packet_class::standard_data), 0x0000U);
+    BOOST_CHECK_EQUAL(static_cast<uint16_t>(difi::packet_class::standard_context), 0x0001U);
+    BOOST_CHECK_EQUAL(static_cast<uint16_t>(difi::packet_class::sample_count_data), 0x0002U);
+    BOOST_CHECK_EQUAL(static_cast<uint16_t>(difi::packet_class::sample_count_context), 0x0003U);
+    BOOST_CHECK_EQUAL(static_cast<uint16_t>(difi::packet_class::version_context), 0x0004U);
+    BOOST_CHECK_EQUAL(static_cast<uint16_t>(difi::packet_class::sample_count_flow_control), 0x0005U);
+    BOOST_CHECK_EQUAL(static_cast<uint16_t>(difi::packet_class::real_time_flow_control), 0x0006U);
+
+    // Information classes per Section 4.2
+    BOOST_CHECK_EQUAL(static_cast<uint16_t>(difi::information_class::basic_data_plane), 0x0000U);
+    BOOST_CHECK_EQUAL(static_cast<uint16_t>(difi::information_class::version_flow), 0x0001U);
+    BOOST_CHECK_EQUAL(static_cast<uint16_t>(difi::information_class::sample_count_data_plane), 0x0002U);
+    BOOST_CHECK_EQUAL(static_cast<uint16_t>(difi::information_class::bit_padding_data_plane), 0x0003U);
+
+    // OUIs
+    BOOST_CHECK_EQUAL(static_cast<uint32_t>(difi::oui::difi), 0x6a621eU);
+    BOOST_CHECK_EQUAL(static_cast<uint32_t>(difi::oui::vita), 0x7c386cU);
+
+    // TSI and TSF types
+    BOOST_CHECK_EQUAL(static_cast<uint8_t>(difi::tsi_type::none), 0);
+    BOOST_CHECK_EQUAL(static_cast<uint8_t>(difi::tsi_type::utc), 1);
+    BOOST_CHECK_EQUAL(static_cast<uint8_t>(difi::tsi_type::gps), 2);
+    BOOST_CHECK_EQUAL(static_cast<uint8_t>(difi::tsi_type::posix), 3);
+
+    BOOST_CHECK_EQUAL(static_cast<uint8_t>(difi::tsf_type::none), 0);
+    BOOST_CHECK_EQUAL(static_cast<uint8_t>(difi::tsf_type::sample_count), 1);
+    BOOST_CHECK_EQUAL(static_cast<uint8_t>(difi::tsf_type::picoseconds), 2);
+    BOOST_CHECK_EQUAL(static_cast<uint8_t>(difi::tsf_type::free_running), 3);
+
+    // CIF masks
+    BOOST_CHECK_EQUAL(static_cast<uint32_t>(difi::cif_mask::standard_fields), 0x7bb98000U);
+    BOOST_CHECK_EQUAL(static_cast<uint32_t>(difi::cif_mask::standard_with_change), 0xfbb98000U);
+    BOOST_CHECK_EQUAL(static_cast<uint32_t>(difi::cif_mask::alternative_fields), 0x39a18000U);
+    BOOST_CHECK_EQUAL(static_cast<uint32_t>(difi::cif_mask::alternative_fields), 966885376U);
+    BOOST_CHECK_EQUAL(static_cast<uint32_t>(difi::cif_mask::alternative_with_change), 0xb9a18000U);
+    BOOST_CHECK_EQUAL(static_cast<uint32_t>(difi::cif_mask::context_change), 0x80000000U);
+
+    // State and event indicators
+    BOOST_CHECK_EQUAL(static_cast<uint32_t>(difi::state_and_event::default_indicators), 0xa00a0000U);
+    BOOST_CHECK_EQUAL(static_cast<uint64_t>(difi::state_and_event::default_indicators), 2685009920ULL);
+
+    // Payload formats
+    BOOST_CHECK_EQUAL(static_cast<uint64_t>(difi::payload_format::sc8_link_efficient), 0xa00001c700000000ULL);
+    BOOST_CHECK_EQUAL(static_cast<uint64_t>(payload_format::sc16_link_efficient), 0xa00003cf00000000ULL);
+
+    // make_class_id tests
+    uint64_t cid_data = difi::make_class_id(difi::oui::difi, difi::packet_class::standard_data);
+    BOOST_CHECK_EQUAL(cid_data, 0x6a621e00000000ULL);
+
+    uint64_t cid_ctx = difi::make_class_id(difi::oui::difi, difi::packet_class::standard_context);
+    BOOST_CHECK_EQUAL(cid_ctx, (0x6a621eULL << 32) | 1ULL);
+
+    uint64_t cid_pad = difi::make_class_id(difi::oui::difi, difi::packet_class::standard_data,
+                                           difi::information_class::bit_padding_data_plane, 7);
+    BOOST_CHECK_EQUAL((cid_pad >> 59) & 0x1fULL, 7ULL);
+    BOOST_CHECK_EQUAL((cid_pad >> 16) & 0xffffULL, 3ULL);
+    BOOST_CHECK_EQUAL(cid_pad & 0xffffULL, 0ULL);
+}
+
+BOOST_AUTO_TEST_CASE(t_reference_point_round_trip)
+{
+    // Test that reference point serializes and deserializes accurately
+    difi::reference_point rps[] = {
+        difi::reference_point::antenna_feed,
+        difi::reference_point::rf_converter,
+        difi::reference_point::if_converter,
+        difi::reference_point::unspecified
+    };
+
+    for (auto rp : rps) {
+        difi::context_config cfg{
+            .sample_rate = 1000000.0,
+            .depth = 16,
+            .stream_id = 12,
+            .ref_point = rp,
+        };
+        auto ctx = difi::make_context<difi::context_version::standard>(cfg);
+        BOOST_CHECK(ctx.ref_point == (rp != difi::reference_point::unspecified ? rp : difi::reference_point::if_converter));
+
+        auto parsed = difi::parse_context<difi::context_version::standard>(ctx.raw.data(), ctx.raw.size());
+        BOOST_CHECK(parsed.ref_point == ctx.ref_point);
+
+        // PMT round-trip
+        difi_header hdr;
+        hdr.stream_id = 12;
+        auto pmt_dict = difi::context_to_pmt(hdr, ctx);
+        auto from_pmt = difi::pmt_to_context<difi::context_version::standard>(pmt_dict);
+        BOOST_CHECK(from_pmt.ref_point == ctx.ref_point);
+    }
+}
+

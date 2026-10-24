@@ -94,6 +94,106 @@ public:
     };
 
     /**
+     * @brief Reference point identifiers according to IEEE-ISTO 4900-2021 Section 5.2.
+     *
+     * Identifies a physical or logical point in the system to which parameters
+     * such as Reference Level, frequencies, and Timestamp Adjustment pertain.
+     */
+    enum class reference_point : uint32_t {
+        unspecified = 0,     ///< Unspecified reference point
+        antenna_feed = 25,   ///< Antenna feed port (0x0019)
+        rf_converter = 75,   ///< RF converter / RFC analog boundary (0x004B)
+        if_converter = 100   ///< IF converter / IFC analog boundary (0x0064, default)
+    };
+
+    /**
+     * @brief Packet class codes for DIFI / VITA 49 (Word 4, bits 15-0 of Class ID).
+     *
+     * According to IEEE-ISTO 4900-2021 Section 4.3.
+     */
+    enum class packet_class : uint16_t {
+        standard_data = 0x0000,             ///< Standard Flow Signal Data
+        standard_context = 0x0001,          ///< Standard Flow Signal Context
+        sample_count_data = 0x0002,         ///< Sample Count Signal Data
+        sample_count_context = 0x0003,      ///< Sample Count Signal Context
+        version_context = 0x0004,           ///< Version Flow Signal Context
+        sample_count_flow_control = 0x0005, ///< Sample Count Timing Flow Control
+        real_time_flow_control = 0x0006     ///< Real Time TSF Timing Flow Control
+    };
+
+    /**
+     * @brief Information class codes for DIFI / VITA 49 (Word 4, bits 31-16 of Class ID).
+     *
+     * According to IEEE-ISTO 4900-2021 Section 4.2.
+     */
+    enum class information_class : uint16_t {
+        basic_data_plane = 0x0000,        ///< Basic Data Plane
+        version_flow = 0x0001,            ///< Version Flow
+        sample_count_data_plane = 0x0002, ///< Sample Count Data Plane
+        bit_padding_data_plane = 0x0003   ///< Bit Padding Permitted Data Plane
+    };
+
+    /**
+     * @brief Organizationally Unique Identifiers (OUI / CID) for DIFI / VITA 49.
+     *
+     * Located in Word 3, bits 23-0 of Class ID.
+     */
+    enum class oui : uint32_t {
+        difi = 0x6a621e, ///< IEEE-ISTO / DIFI Consortium Company ID (6A-62-1E)
+        vita = 0x7c386c  ///< VITA 49 alternative (7C-38-6C)
+    };
+
+    /**
+     * @brief Timestamp Integer (TSI) field types according to IEEE-ISTO 4900-2021 Table 7.
+     */
+    enum class tsi_type : uint8_t {
+        none = 0,  ///< No integer-seconds timestamp
+        utc = 1,   ///< Coordinated Universal Time (UTC)
+        gps = 2,   ///< Global Positioning System (GPS) time
+        posix = 3  ///< POSIX time (seconds since 1970-01-01 00:00:00 UTC)
+    };
+
+    /**
+     * @brief Timestamp Fractional (TSF) field types according to IEEE-ISTO 4900-2021 Table 7.
+     */
+    enum class tsf_type : uint8_t {
+        none = 0,         ///< No fractional-seconds timestamp
+        sample_count = 1, ///< Sample count timestamp
+        picoseconds = 2,  ///< Real-time timestamp in picoseconds
+        free_running = 3  ///< Free-running count timestamp
+    };
+
+    /**
+     * @brief Context Indicator Field (CIF 0) standard bit masks.
+     */
+    enum class cif_mask : uint32_t {
+        context_change = 0x80000000U,         ///< Context field change indicator (bit 31)
+        standard_fields = 0x7bb98000U,        ///< Standard 108-byte context fields (no change bit)
+        standard_with_change = 0xfbb98000U,   ///< Standard 108-byte context fields with change bit
+        alternative_fields = 0x39a18000U,     ///< Alternative 72-byte context fields (no change bit, decimal 966885376)
+        alternative_with_change = 0xb9a18000U ///< Alternative 72-byte context fields with change bit
+    };
+
+    /**
+     * @brief State and event indicator bit masks (Word 25).
+     */
+    enum class state_and_event : uint32_t {
+        calibrated_time_enable = 0x80000000U,    ///< Calibrated time indicator enable (bit 31)
+        reference_lock_enable = 0x20000000U,     ///< Reference frequency lock indicator enable (bit 29)
+        calibrated_time_indicator = 0x00800000U, ///< Calibrated time reference locked (bit 19)
+        reference_lock_indicator = 0x00020000U,  ///< Reference frequency locked (bit 17)
+        default_indicators = 0xa00a0000U         ///< Both time and reference enabled and locked (decimal 2685009920)
+    };
+
+    /**
+     * @brief Data packet payload format masks (Words 26 & 27).
+     */
+    enum class payload_format : uint64_t {
+        sc8_link_efficient = 0xa00001c700000000ULL,  ///< 8-bit signed Cartesian link-efficient
+        sc16_link_efficient = 0xa00003cf00000000ULL  ///< 16-bit signed Cartesian link-efficient
+    };
+
+    /**
      * @brief Decoded fields from a 28-byte DIFI packet header.
      */
     struct DIFI_API header {
@@ -128,16 +228,41 @@ public:
                                                                             28, 36, 44,
                                                                             52, 60, 64 };
     static constexpr uint32_t DATA_START_IDX = 28;
-    static constexpr uint64_t DEFAULT_STATE_AND_EVENTS = 2685009920ULL;
-    static constexpr uint64_t EIGHT_BIT_SIGNED_CART_LINK_EFF = 0xa00001c700000000ULL;
-    static constexpr uint64_t SIXTEEN_BIT_SIGNED_CART_LINK_EFF = 0xa00003cf00000000ULL;
-    static constexpr uint64_t STANDARD_OUI = 0x6a621e;
-    static constexpr uint64_t ALT_OUI = 0x7c386c;
+    static constexpr uint64_t DEFAULT_STATE_AND_EVENTS =
+        static_cast<uint64_t>(state_and_event::default_indicators);
+    static constexpr uint64_t EIGHT_BIT_SIGNED_CART_LINK_EFF =
+        static_cast<uint64_t>(payload_format::sc8_link_efficient);
+    static constexpr uint64_t SIXTEEN_BIT_SIGNED_CART_LINK_EFF =
+        static_cast<uint64_t>(payload_format::sc16_link_efficient);
+    static constexpr uint64_t STANDARD_OUI = static_cast<uint64_t>(oui::difi);
+    static constexpr uint64_t ALT_OUI = static_cast<uint64_t>(oui::vita);
     static constexpr size_t STANDARD_CONTEXT_PACKET_SIZE = STANDARD_CONTEXT_SIZE;
     static constexpr size_t ALT_CONTEXT_PACKET_SIZE = ALT_CONTEXT_SIZE;
     static constexpr uint32_t STANDARD_DATA_STATIC_BITS = 0x18e00000;
     static constexpr uint32_t STANDARD_CONTEXT_STATIC_BITS = 0x49e00000;
     static constexpr uint32_t ALT_CONTEXT_STATIC_BITS = 0x49000000;
+
+    /**
+     * @brief Constructs a 64-bit VITA 49 / DIFI Class ID from OUI, packet class, and information class.
+     *
+     * @param id_oui Organizationally Unique Identifier (default: oui::difi)
+     * @param pkt_cls Packet class code (default: packet_class::standard_data)
+     * @param info_cls Information class code (default: information_class::basic_data_plane)
+     * @param pad_bits Number of pad bits in final word of payload (0..31, default: 0)
+     * @return 64-bit Class ID word
+     */
+    static constexpr uint64_t make_class_id(
+        oui id_oui = oui::difi,
+        packet_class pkt_cls = packet_class::standard_data,
+        information_class info_cls = information_class::basic_data_plane,
+        uint8_t pad_bits = 0)
+    {
+        uint64_t w3 = ((static_cast<uint64_t>(pad_bits) & 0x1fULL) << 27) |
+                      (static_cast<uint64_t>(id_oui) & 0x00ffffffULL);
+        uint64_t w4 = (static_cast<uint64_t>(info_cls) << 16) |
+                      (static_cast<uint64_t>(pkt_cls) & 0xffffULL);
+        return (w3 << 32) | w4;
+    }
 
     // --- Context Representation Templates ---
 
@@ -173,9 +298,10 @@ public:
         uint64_t frac = 0;                       ///< Fractional picoseconds timestamp (default: 0)
         int64_t timestamp_adjustment = 0;        ///< Timestamp adjustment in femtoseconds (default: 0)
         uint32_t timestamp_calibration_time = 0; ///< Timestamp calibration time in seconds (0 defaults to full)
-        uint64_t class_id = 0;                   ///< Class identifier (0 defaults to standard/alternative OUI ^ 1)
+        uint64_t class_id = 0;                   ///< Class identifier (0 defaults to standard/alternative OUI)
         uint32_t cif = 0;                        ///< Context indicator field (0 defaults to standard/alternative default)
-        uint32_t ref_point = 0x64;               ///< Reference point (default: 0x64)
+        reference_point ref_point =
+            reference_point::if_converter;       ///< Reference point (default: if_converter = 100 / 0x64)
         uint32_t state_and_event_indicators = 0; ///< State and event indicators (0 defaults to DEFAULT_STATE_AND_EVENTS)
     };
 
@@ -728,8 +854,8 @@ struct DIFI_API difi::context<difi::context_version::standard> {
     uint64_t class_id = 0;                      ///< Class identifier
     uint32_t full = 0;                          ///< Integer seconds timestamp
     uint64_t frac = 0;                          ///< Fractional picoseconds timestamp
-    uint32_t cif = 0;                           ///< Context Indicator Field
-    uint32_t ref_point = 0;                     ///< Reference point
+    uint32_t cif = 0;                                           ///< Context Indicator Field
+    reference_point ref_point = reference_point::if_converter;  ///< Reference point
     double bandwidth = 0.0;                     ///< Bandwidth in Hz
     double if_ref_freq = 0.0;                   ///< IF reference frequency in Hz
     double rf_ref_freq = 0.0;                   ///< RF reference frequency in Hz
@@ -822,6 +948,15 @@ using packet_type = difi::packet_type;
 using bit_depth = difi::bit_depth;
 using context_version = difi::context_version;
 using context_behavior = difi::context_behavior;
+using reference_point = difi::reference_point;
+using packet_class = difi::packet_class;
+using information_class = difi::information_class;
+using oui = difi::oui;
+using tsi_type = difi::tsi_type;
+using tsf_type = difi::tsf_type;
+using cif_mask = difi::cif_mask;
+using state_and_event = difi::state_and_event;
+using payload_format = difi::payload_format;
 using difi_header = difi::header;
 
 template <difi::context_version V = difi::context_version::standard>

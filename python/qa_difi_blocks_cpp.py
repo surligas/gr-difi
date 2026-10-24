@@ -17,6 +17,7 @@ import time
 from multiprocessing import Process
 import pytest
 import numpy as np
+import difi
 from difi import (difi_source_cpp_fc32, difi_source_cpp_sc8,
                   difi_sink_cpp, difi_sink_cpp_sc8, difi_sink_cpp_sc16,
                   DATA_PACKET_METADATA_FORMAT, VITA_PKT_MOD,
@@ -961,7 +962,8 @@ class qa_testcpp(gr_unittest.TestCase):
         sink_rf = difi_sink_cpp_sc16(
             '127.0.0.1', 5001, 2000000, 256,
             rf_freq=1.42e9, if_freq=70e6, bandwidth=1.5e6,
-            rf_gain=25.0, if_gain=-1.5, ref_level=12.0, if_band_offset=1000.0
+            rf_gain=25.0, if_gain=-1.5, ref_level=12.0, if_band_offset=1000.0,
+            ref_point=int(difi.reference_point.rf_converter)
         )
         assert sink_rf.rf_freq() == 1.42e9
         assert sink_rf.center_freq() == 1.42e9
@@ -972,6 +974,11 @@ class qa_testcpp(gr_unittest.TestCase):
         assert sink_rf.if_gain() == -1.5
         assert sink_rf.ref_level() == 12.0
         assert sink_rf.if_band_offset() == 1000.0
+        assert sink_rf.ref_point() == difi.reference_point.rf_converter
+
+        sink_rf.set_ref_point(difi.reference_point.antenna_feed)
+        assert sink_rf.ref_point() == difi.reference_point.antenna_feed
+        assert sink_rf.context().ref_point == difi.reference_point.antenna_feed
 
         sink_rf.set_center_freq(2.4e9)
         assert sink_rf.center_freq() == 2.4e9
@@ -982,6 +989,22 @@ class qa_testcpp(gr_unittest.TestCase):
         assert sink_rf.context().rf_ref_freq == 2.4e9
         assert sink_rf.context().rf_gain == 30.0
         assert sink_rf.context().bandwidth == 2.0e6
+
+        # Test documented enums and make_class_id in Python
+        assert int(difi.reference_point.antenna_feed) == 25
+        assert int(difi.reference_point.rf_converter) == 75
+        assert int(difi.reference_point.if_converter) == 100
+        assert int(difi.reference_point.unspecified) == 0
+
+        assert int(difi.packet_class.standard_data) == 0
+        assert int(difi.packet_class.standard_context) == 1
+        assert int(difi.packet_class.version_context) == 4
+
+        assert int(difi.oui.difi) == 0x6a621e
+        assert int(difi.oui.vita) == 0x7c386c
+
+        cid = difi.make_class_id(difi.oui.difi, difi.packet_class.standard_data)
+        assert cid == 0x6a621e00000000
 
 
 # helper functions

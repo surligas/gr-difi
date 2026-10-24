@@ -70,7 +70,8 @@ namespace gr {
                         const std::string& length_tag_name = "", uint32_t lead_time_us = 10000,
                         double rf_freq = 0.0, double if_freq = 0.0, double bandwidth = 0.0,
                         float rf_gain = 0.0f, float if_gain = 0.0f, float ref_level = 0.0f,
-                        double if_band_offset = 0.0);
+                        double if_band_offset = 0.0,
+                        difi::reference_point ref_point = difi::reference_point::if_converter);
       ~difi_sink_cpp_impl() override = default;
 
       // Where all the action really happens
@@ -162,6 +163,21 @@ namespace gr {
 
       void set_if_band_offset(double offset) override { m_context.if_band_offset = offset; }
       double if_band_offset() const override { return m_context.if_band_offset; }
+
+      void set_ref_point(difi::reference_point rp) override
+      {
+          if constexpr (V == difi::context_version::standard) {
+              m_context.ref_point = rp;
+          }
+      }
+      difi::reference_point ref_point() const override
+      {
+          if constexpr (V == difi::context_version::standard) {
+              return m_context.ref_point;
+          } else {
+              return difi::reference_point::unspecified;
+          }
+      }
 
       const difi::context<V>& typed_context() const { return m_context; }
       void set_typed_context(const difi::context<V>& ctx) { m_context = ctx; }

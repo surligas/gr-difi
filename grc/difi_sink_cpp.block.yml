@@ -8,7 +8,7 @@ label: DIFI Sink
 category: '[DIFI]'
 templates:
   imports: import difi
-  make: difi.difi_sink_cpp_${ 'sc8' if bit_depth == '8' else 'sc16' }(${ip_addr}, ${port}, ${sample_rate}, ${data_size}, ${stream_id}, ${context_packet_send_count}, ${reference_time_full}, ${reference_time_frac}, ${ '""' if mode == 'streaming' else length_tag_name }, int(${lead_time_us}), int(${context_pack_size}), int(${protocol}), float(${rf_freq}), float(${if_freq}), float(${bandwidth}), float(${rf_gain}), float(${if_gain}), float(${ref_level}), float(${if_band_offset}))
+  make: difi.difi_sink_cpp_${ 'sc8' if bit_depth == '8' else 'sc16' }(${ip_addr}, ${port}, ${sample_rate}, ${data_size}, ${stream_id}, ${context_packet_send_count}, ${reference_time_full}, ${reference_time_frac}, ${ '""' if mode == 'streaming' else length_tag_name }, int(${lead_time_us}), int(${context_pack_size}), int(${protocol}), float(${rf_freq}), float(${if_freq}), float(${bandwidth}), float(${rf_gain}), float(${if_gain}), float(${ref_level}), float(${if_band_offset}), int(${ref_point}))
   callbacks:
   - set_rf_freq(${rf_freq})
   - set_if_freq(${if_freq})
@@ -17,6 +17,7 @@ templates:
   - set_if_gain(${if_gain})
   - set_ref_level(${ref_level})
   - set_if_band_offset(${if_band_offset})
+  - set_ref_point(difi.reference_point(${ref_point}))
 
 parameters:
 - id: bit_depth
@@ -123,6 +124,14 @@ parameters:
   category: RF Options
   dtype: real
   default: '0'
+- id: ref_point
+  label: Reference Point
+  category: RF Options
+  dtype: enum
+  options: ['100', '75', '25', '0']
+  option_labels: ['IF Converter (100 / 0x64)', 'RF Converter (75 / 0x4B)', 'Antenna Feed (25 / 0x19)', 'Unspecified (0)']
+  default: '100'
+  hide: ${ ('none' if context_pack_size == '108' else 'all') }
 
 asserts:
 - ${ mode != 'burst' or len(length_tag_name.strip('\"\'')) > 0 }

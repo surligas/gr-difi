@@ -88,6 +88,9 @@ namespace gr {
 
       virtual void set_if_band_offset(double offset) = 0;
       virtual double if_band_offset() const = 0;
+
+      virtual void set_ref_point(difi::reference_point rp) = 0;
+      virtual difi::reference_point ref_point() const = 0;
     };
 
     /**
@@ -131,7 +134,8 @@ namespace gr {
           float rf_gain = 0.0f,
           float if_gain = 0.0f,
           float ref_level = 0.0f,
-          double if_band_offset = 0.0);
+          double if_band_offset = 0.0,
+          difi::reference_point ref_point = difi::reference_point::if_converter);
     };
 
     typedef difi_sink_base difi_sink_cpp_sc8;
