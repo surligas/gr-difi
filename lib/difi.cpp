@@ -522,14 +522,23 @@ void difi::pack_samples(const T* in, size_t num_samples, void* payload, int dept
             volk_32f_s32f_convert_8i(
                 out8, src_f, 1.0f, static_cast<unsigned int>(num_samples * 2));
         }
-    } else { // T is std::complex<char>
+    } else if constexpr (std::is_same_v<T, std::complex<int16_t>>) {
+        if (depth == 16) {
+            std::memcpy(payload, in, num_samples * sizeof(T));
+            swap_endian_16(reinterpret_cast<uint16_t*>(payload), num_samples * 2);
+        } else {
+            const int16_t* in16 = reinterpret_cast<const int16_t*>(in);
+            int8_t* out8 = static_cast<int8_t*>(payload);
+            volk_16i_convert_8i(out8, in16, static_cast<unsigned int>(num_samples * 2));
+        }
+    } else { // T is std::complex<char> or std::complex<int8_t>
         const int8_t* in8 = reinterpret_cast<const int8_t*>(in);
         if (depth == 16) {
             int16_t* out16 = static_cast<int16_t*>(payload);
             volk_8i_convert_16i(out16, in8, static_cast<unsigned int>(num_samples * 2));
             swap_endian_16(reinterpret_cast<uint16_t*>(out16), num_samples * 2);
         } else {
-            std::memcpy(payload, in, num_samples * 2);
+            std::memcpy(payload, in, num_samples * sizeof(T));
         }
     }
 }
@@ -568,7 +577,28 @@ void difi::pack_samples(const T* in,
             volk_32f_s32f_convert_8i(
                 out8, src_f, gain, static_cast<unsigned int>(num_samples * 2));
         }
-    } else { // T is std::complex<char>
+    } else if constexpr (std::is_same_v<T, std::complex<int16_t>>) {
+        const int16_t* in16 = reinterpret_cast<const int16_t*>(in);
+        std::vector<float> temp_f(num_samples * 2);
+        volk_16i_s32f_convert_32f(
+            temp_f.data(), in16, 1.0f, static_cast<unsigned int>(num_samples * 2));
+
+        std::vector<gr_complex> offset_vec(num_samples, offset);
+        volk_32fc_x2_add_32fc(reinterpret_cast<lv_32fc_t*>(temp_f.data()),
+                              reinterpret_cast<const lv_32fc_t*>(temp_f.data()),
+                              reinterpret_cast<const lv_32fc_t*>(offset_vec.data()),
+                              static_cast<unsigned int>(num_samples));
+        if (depth == 16) {
+            int16_t* out16 = static_cast<int16_t*>(payload);
+            volk_32f_s32f_convert_16i(
+                out16, temp_f.data(), gain, static_cast<unsigned int>(num_samples * 2));
+            swap_endian_16(reinterpret_cast<uint16_t*>(out16), num_samples * 2);
+        } else {
+            int8_t* out8 = static_cast<int8_t*>(payload);
+            volk_32f_s32f_convert_8i(
+                out8, temp_f.data(), gain, static_cast<unsigned int>(num_samples * 2));
+        }
+    } else { // T is std::complex<char> or std::complex<int8_t>
         const int8_t* in8 = reinterpret_cast<const int8_t*>(in);
         std::vector<float> temp_f(num_samples * 2);
         volk_8i_s32f_convert_32f(
@@ -621,7 +651,16 @@ size_t difi::unpack_samples(
             volk_8i_s32f_convert_32f(
                 out_f, in8, 1.0f, static_cast<unsigned int>(count * 2));
         }
-    } else { // T is std::complex<char>
+    } else if constexpr (std::is_same_v<T, std::complex<int16_t>>) {
+        if (depth == 16) {
+            std::memcpy(out, payload, count * sizeof(T));
+            swap_endian_16(reinterpret_cast<uint16_t*>(out), count * 2);
+        } else {
+            const int8_t* in8 = static_cast<const int8_t*>(payload);
+            int16_t* out16 = reinterpret_cast<int16_t*>(out);
+            volk_8i_convert_16i(out16, in8, static_cast<unsigned int>(count * 2));
+        }
+    } else { // T is std::complex<char> or std::complex<int8_t>
         int8_t* out8 = reinterpret_cast<int8_t*>(out);
         if (depth == 16) {
             const int16_t* in16 = static_cast<const int16_t*>(payload);
@@ -630,7 +669,7 @@ size_t difi::unpack_samples(
             swap_endian_16(reinterpret_cast<uint16_t*>(buf.data()), count * 2);
             volk_16i_convert_8i(out8, buf.data(), static_cast<unsigned int>(count * 2));
         } else {
-            std::memcpy(out, payload, count * 2);
+            std::memcpy(out, payload, count * sizeof(T));
         }
     }
 
@@ -901,22 +940,30 @@ difi::make_pkt_n_dict(uint8_t pkt_n, size_t data_len, uint32_t full, uint64_t fr
     return dict;
 }
 
-// Explicit template instantiations
 template void difi::pack_samples<gr_complex>(const gr_complex*, size_t, void*, int);
-
 template void
 difi::pack_samples<std::complex<char>>(const std::complex<char>*, size_t, void*, int);
+template void
+difi::pack_samples<std::complex<int8_t>>(const std::complex<int8_t>*, size_t, void*, int);
+template void
+difi::pack_samples<std::complex<int16_t>>(const std::complex<int16_t>*, size_t, void*, int);
 
 template void
 difi::pack_samples<gr_complex>(const gr_complex*, size_t, void*, int, float, gr_complex);
-
 template void difi::pack_samples<std::complex<char>>(
     const std::complex<char>*, size_t, void*, int, float, gr_complex);
+template void difi::pack_samples<std::complex<int8_t>>(
+    const std::complex<int8_t>*, size_t, void*, int, float, gr_complex);
+template void difi::pack_samples<std::complex<int16_t>>(
+    const std::complex<int16_t>*, size_t, void*, int, float, gr_complex);
 
 template size_t
 difi::unpack_samples<gr_complex>(const void*, size_t, gr_complex*, size_t, int);
-
 template size_t difi::unpack_samples<std::complex<char>>(
     const void*, size_t, std::complex<char>*, size_t, int);
+template size_t difi::unpack_samples<std::complex<int8_t>>(
+    const void*, size_t, std::complex<int8_t>*, size_t, int);
+template size_t difi::unpack_samples<std::complex<int16_t>>(
+    const void*, size_t, std::complex<int16_t>*, size_t, int);
 
 } // namespace gr::difi

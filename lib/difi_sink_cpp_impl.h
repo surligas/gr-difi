@@ -30,27 +30,14 @@ namespace gr {
         using sample_t = sink_sample_type_t<BitDepth>;
 
      private:
-        void pack_sample(sample_t val)
-        {
-          if constexpr (BitDepth == difi::bit_depth::bits_8) {
-            m_data_packet_buffer[difi::DIFI_HEADER_SIZE + d_current_buff_idx] = static_cast<uint8_t>(val.real());
-            m_data_packet_buffer[difi::DIFI_HEADER_SIZE + d_current_buff_idx + 1] = static_cast<uint8_t>(val.imag());
-          } else {
-            auto re = htons(static_cast<uint16_t>(val.real()));
-            auto im = htons(static_cast<uint16_t>(val.imag()));
-            std::memcpy(&m_data_packet_buffer[difi::DIFI_HEADER_SIZE + d_current_buff_idx], &re, sizeof(re));
-            std::memcpy(&m_data_packet_buffer[difi::DIFI_HEADER_SIZE + d_current_buff_idx + 2], &im, sizeof(im));
-          }
-        }
-        std::span<const uint8_t> pack_data();
+        std::span<const uint8_t> pack_data(size_t payload_bytes);
         void send_context();
         std::pair<uint32_t, uint64_t> add_frac_full();
         void reanchor_timestamp();
-        void flush_current_packet();
 
         difi::context<V> m_context;
         std::vector<uint8_t> m_context_buffer;
-        std::vector<uint8_t> m_data_packet_buffer;
+        std::vector<uint8_t> m_data_buffer;
         uint64_t m_class_id;
 
         std::unique_ptr<Transport> m_transport;
@@ -62,7 +49,6 @@ namespace gr {
         uint32_t d_full_samp;
         std::string m_length_tag_name;
         pmt::pmt_t m_length_tag_key;
-        pmt::pmt_t d_tx_time_key;
         uint64_t d_burst_samples_remaining;
         uint32_t d_lead_time_us;
         uint32_t d_full;
@@ -70,9 +56,7 @@ namespace gr {
         uint32_t d_data_len;
         uint8_t d_pkt_n;
         int32_t d_static_bits;
-        double d_time_adj;
-        uint64_t d_pcks_since_last_reference;
-        int d_current_buff_idx;
+        uint64_t d_samples_since_last_reference;
         uint64_t d_contex_packet_interval;
         uint64_t d_packet_count;
         uint32_t d_context_packet_count;

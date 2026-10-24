@@ -506,6 +506,45 @@ BOOST_AUTO_TEST_CASE(t_sample_packing_and_unpacking_sc8)
     }
 }
 
+BOOST_AUTO_TEST_CASE(t_sample_packing_complex_int16)
+{
+    const size_t N = 8;
+    std::vector<std::complex<int16_t>> samples_in(N);
+    for (size_t i = 0; i < N; ++i) {
+        samples_in[i] = std::complex<int16_t>(
+            static_cast<int16_t>(i * 1000 - 4000),
+            static_cast<int16_t>(4000 - i * 1000));
+    }
+
+    // 16-bit wire format (network byte order)
+    std::vector<uint8_t> payload16(N * 4);
+    difi::pack_samples(samples_in.data(), N, payload16.data(), 16);
+
+    // Verify first sample endianness (big-endian)
+    uint16_t expected_re_be = htons(static_cast<uint16_t>(samples_in[0].real()));
+    uint16_t actual_re_be;
+    std::memcpy(&actual_re_be, payload16.data(), sizeof(uint16_t));
+    BOOST_CHECK_EQUAL(actual_re_be, expected_re_be);
+
+    // Unpack back to complex<int16_t>
+    std::vector<std::complex<int16_t>> samples_out16(N);
+    size_t unpacked16 = difi::unpack_samples(
+        payload16.data(), payload16.size(), samples_out16.data(), N, 16);
+    BOOST_CHECK_EQUAL(unpacked16, N);
+
+    for (size_t i = 0; i < N; ++i) {
+        BOOST_CHECK_EQUAL(samples_out16[i].real(), samples_in[i].real());
+        BOOST_CHECK_EQUAL(samples_out16[i].imag(), samples_in[i].imag());
+    }
+
+    // Span-based overload
+    std::vector<uint8_t> span_payload16(N * 4);
+    difi::pack_samples(std::span<const std::complex<int16_t>>(samples_in),
+                       std::span<uint8_t>(span_payload16), 16);
+    BOOST_CHECK_EQUAL_COLLECTIONS(payload16.begin(), payload16.end(),
+                                  span_payload16.begin(), span_payload16.end());
+}
+
 BOOST_AUTO_TEST_CASE(t_timestamp_advance)
 {
     uint32_t full = 100;

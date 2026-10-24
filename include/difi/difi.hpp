@@ -38,7 +38,10 @@ class difi;
  * @brief Concept constraining complex sample types supported by DIFI.
  */
 template <typename T>
-concept sample_type = std::same_as<T, gr_complex> || std::same_as<T, std::complex<char>>;
+concept sample_type = std::same_as<T, gr_complex> ||
+                      std::same_as<T, std::complex<char>> ||
+                      std::same_as<T, std::complex<int8_t>> ||
+                      std::same_as<T, std::complex<int16_t>>;
 
 /**
  * @brief Central class for DIFI and VITA 49 protocol operations.

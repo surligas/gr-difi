@@ -142,6 +142,7 @@ class qa_testcpp(gr_unittest.TestCase):
         send_proc.join()
         rec_proc.join()
         tb_proc.kill()
+        tb_proc.join()
         if rec_proc.exitcode != 0:
             pytest.fail()
 
@@ -166,6 +167,7 @@ class qa_testcpp(gr_unittest.TestCase):
         send_proc.join()
         rec_proc.join()
         tb_proc.kill()
+        tb_proc.join()
         if rec_proc.exitcode != 0:
             pytest.fail()
 
@@ -211,6 +213,7 @@ class qa_testcpp(gr_unittest.TestCase):
         send_proc.join()
         socket_rec_time.join()
         tb_proc.kill()
+        tb_proc.join()
         if socket_rec_time.exitcode != 0:
             pytest.fail()
 
@@ -248,6 +251,7 @@ class qa_testcpp(gr_unittest.TestCase):
         rec_proc.join()
         sock.close()
         tb_proc.kill()
+        tb_proc.join()
         if rec_proc.exitcode != 0:
             pytest.fail()
 
@@ -300,6 +304,7 @@ class qa_testcpp(gr_unittest.TestCase):
         send_proc.join()
         socket_rec_time.join()
         tb_proc.kill()
+        tb_proc.join()
         if socket_rec_time.exitcode != 0:
             pytest.fail()
 
@@ -330,12 +335,14 @@ class qa_testcpp(gr_unittest.TestCase):
             socket_rec_test.join()
             if socket_rec_test.exitcode != 0:
                 tb_proc.kill()
+                tb_proc.join()
                 pytest.fail()
             base_pkt_n = (base_pkt_n + 1) % VITA_PKT_MOD
             random.randint(29, 1371)
             vita_data[random.randint(29, 1371)] = random.randint(0, 255)
             i += 1
         tb_proc.kill()
+        tb_proc.join()
 
     def test_multi_packet_correct_sc8(self):
         source_p, sink_p = get_open_ports()
@@ -364,12 +371,14 @@ class qa_testcpp(gr_unittest.TestCase):
             socket_rec_test.join()
             if socket_rec_test.exitcode != 0:
                 tb_proc.kill()
+                tb_proc.join()
                 pytest.fail()
             base_pkt_n = (base_pkt_n + 1) % VITA_PKT_MOD
             random.randint(29, 1371)
             vita_data[random.randint(29, 1371)] = random.randint(0, 255)
             i += 1
         tb_proc.kill()
+        tb_proc.join()
 
     # standalone mode tests
     def test_standalone_context(self):
@@ -389,8 +398,9 @@ class qa_testcpp(gr_unittest.TestCase):
         time.sleep(1)
         tb_proc.start()
         socket_rec_test.join()
+        tb_proc.kill()
+        tb_proc.join()
         if socket_rec_test.exitcode != 0:
-            tb_proc.kill()
             pytest.fail()
 
     def test_standalone_data(self):
@@ -408,8 +418,9 @@ class qa_testcpp(gr_unittest.TestCase):
         time.sleep(1)
         tb_proc.start()
         socket_rec_test.join()
+        tb_proc.kill()
+        tb_proc.join()
         if socket_rec_test.exitcode != 0:
-            tb_proc.kill()
             pytest.fail()
 
     def test_16_bit_depth_full_loop(self):
@@ -435,6 +446,7 @@ class qa_testcpp(gr_unittest.TestCase):
         send_proc.join()
         rec_proc.join()
         tb_proc.kill()
+        tb_proc.join()
         if rec_proc.exitcode != 0:
             pytest.fail()
 
@@ -453,8 +465,9 @@ class qa_testcpp(gr_unittest.TestCase):
         time.sleep(1)
         tb_proc.start()
         socket_rec_test.join()
+        tb_proc.kill()
+        tb_proc.join()
         if socket_rec_test.exitcode != 0:
-            tb_proc.kill()
             pytest.fail()
 
     def test_standalone_16_bit_data_random_vec(self):
@@ -483,8 +496,9 @@ class qa_testcpp(gr_unittest.TestCase):
         time.sleep(1)
         tb_proc.start()
         socket_rec_test.join()
+        tb_proc.kill()
+        tb_proc.join()
         if socket_rec_test.exitcode != 0:
-            tb_proc.kill()
             pytest.fail()
 
     def test_standalone_context_16(self):
@@ -504,8 +518,9 @@ class qa_testcpp(gr_unittest.TestCase):
         time.sleep(1)
         tb_proc.start()
         socket_rec_test.join()
+        tb_proc.kill()
+        tb_proc.join()
         if socket_rec_test.exitcode != 0:
-            tb_proc.kill()
             pytest.fail()
 
     # tcp tests
@@ -533,6 +548,7 @@ class qa_testcpp(gr_unittest.TestCase):
         send_proc.join()
         rec_proc.join()
         tb_proc.kill()
+        tb_proc.join()
         if rec_proc.exitcode != 0:
             pytest.fail()
 
@@ -574,6 +590,7 @@ class qa_testcpp(gr_unittest.TestCase):
         rec_proc.join()
         sock.close()
         tb_proc.kill()
+        tb_proc.join()
         if rec_proc.exitcode != 0:
             pytest.fail()
 
@@ -602,6 +619,7 @@ class qa_testcpp(gr_unittest.TestCase):
         socket_rec_test.join()
         send_proc.join()
         tb_proc.kill()
+        tb_proc.join()
         if socket_rec_test.exitcode != 0:
             pytest.fail()
 
@@ -630,6 +648,7 @@ class qa_testcpp(gr_unittest.TestCase):
         socket_rec_test.join()
         send_proc.join()
         tb_proc.kill()
+        tb_proc.join()
         if socket_rec_test.exitcode != 0:
             pytest.fail()
 
@@ -654,8 +673,9 @@ class qa_testcpp(gr_unittest.TestCase):
 
         time.sleep(1)
         socket_rec_test.join()
+        tb_proc.kill()
+        tb_proc.join()
         if socket_rec_test.exitcode != 0:
-            tb_proc.kill()
             pytest.fail()
 
     def test_tcp_standalone_data(self):
@@ -676,8 +696,9 @@ class qa_testcpp(gr_unittest.TestCase):
         time.sleep(1)
         tb_proc.start()
         socket_rec_test.join()
+        tb_proc.kill()
+        tb_proc.join()
         if socket_rec_test.exitcode != 0:
-            tb_proc.kill()
             pytest.fail()
 
     def test_tcp_16_bit_depth_full_loop(self):
@@ -707,6 +728,7 @@ class qa_testcpp(gr_unittest.TestCase):
         send_proc.join()
         rec_proc.join()
         tb_proc.kill()
+        tb_proc.join()
         if rec_proc.exitcode != 0:
             pytest.fail()
 
@@ -728,8 +750,9 @@ class qa_testcpp(gr_unittest.TestCase):
         time.sleep(1)
         tb_proc.start()
         socket_rec_test.join()
+        tb_proc.kill()
+        tb_proc.join()
         if socket_rec_test.exitcode != 0:
-            tb_proc.kill()
             pytest.fail()
 
     def test_tcp_standalone_16_bit_data_random_vec(self):
@@ -761,8 +784,9 @@ class qa_testcpp(gr_unittest.TestCase):
         time.sleep(1)
         tb_proc.start()
         socket_rec_test.join()
+        tb_proc.kill()
+        tb_proc.join()
         if socket_rec_test.exitcode != 0:
-            tb_proc.kill()
             pytest.fail()
 
     def test_tcp_standalone_context_16(self):
@@ -785,8 +809,9 @@ class qa_testcpp(gr_unittest.TestCase):
         time.sleep(1)
         tb_proc.start()
         socket_rec_test.join()
+        tb_proc.kill()
+        tb_proc.join()
         if socket_rec_test.exitcode != 0:
-            tb_proc.kill()
             pytest.fail()
 
     def test_context_packet_behavior_mode_1(self):
@@ -813,6 +838,7 @@ class qa_testcpp(gr_unittest.TestCase):
         send_proc_data.join()
         rec_proc.join()
         tb_proc.kill()
+        tb_proc.join()
         if rec_proc.exitcode != 0:
             pytest.fail()
 
@@ -840,6 +866,7 @@ class qa_testcpp(gr_unittest.TestCase):
         send_proc_data.join()
         rec_proc.join()
         tb_proc.kill()
+        tb_proc.join()
         if rec_proc.exitcode != 0:
             pytest.fail()
 
@@ -896,6 +923,11 @@ class qa_testcpp(gr_unittest.TestCase):
             sock.close()
 
         assert len(received) == 2
+        # Only the available 50 samples (100 bytes) should be sent at end of burst
+        assert len(received[0]) == 28 + 50 * 2
+        assert len(received[1]) == 28 + 50 * 2
+        assert received[0][28:] == bytes(burst1)
+        assert received[1][28:] == bytes(burst2)
 
     def test_sink_context_accessors(self):
         sink_std = difi_sink_cpp_sc8(
