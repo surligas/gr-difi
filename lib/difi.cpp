@@ -610,12 +610,24 @@ std::pair<uint32_t, uint64_t> difi::system_timestamp(uint32_t lead_time_us, tsi_
     };
 
     switch (tsi) {
+#if defined(__cpp_lib_chrono) && __cpp_lib_chrono >= 201907L
     case tsi_type::utc:
         calc(std::chrono::utc_clock::now());
         break;
     case tsi_type::gps:
         calc(std::chrono::gps_clock::now());
         break;
+#else
+    case tsi_type::utc:
+        calc(std::chrono::system_clock::now());
+        break;
+    case tsi_type::gps:
+        calc(std::chrono::system_clock::now());
+        if (full >= 315964800U) {
+            full -= 315964800U;
+        }
+        break;
+#endif
     case tsi_type::posix:
     case tsi_type::none:
     default:

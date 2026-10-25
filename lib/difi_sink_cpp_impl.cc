@@ -334,9 +334,10 @@ int difi_sink_cpp_impl<V, Transport, BitDepth>::work(
 
         // Burst starts at abs_offset
         d_burst_samples_remaining = pmt::to_uint64(next_tag->value);
-        this->d_logger->debug("Starting burst at offset {} with {} samples remaining",
-                              next_tag->offset,
-                              d_burst_samples_remaining);
+        GR_LOG_DEBUG(this->d_logger,
+                     "Starting burst at offset " + std::to_string(next_tag->offset) +
+                     " with " + std::to_string(d_burst_samples_remaining) +
+                     " samples remaining");
         reanchor_timestamp();
     } else {
         // Check for overlapping burst tags
@@ -405,9 +406,9 @@ int difi_sink_cpp_impl<V, Transport, BitDepth>::work(
                                m_data_buffer.data() + difi::DIFI_HEADER_SIZE,
                                s_bit_depth_val);
             auto to_send = pack_data(tail_payload_bytes);
-            this->d_logger->debug("Sending final burst packet with {} samples ({} bytes)",
-                                  tail_samples,
-                                  tail_payload_bytes);
+            GR_LOG_DEBUG(this->d_logger,
+                         "Sending final burst packet with " + std::to_string(tail_samples) +
+                         " samples (" + std::to_string(tail_payload_bytes) + " bytes)");
             m_transport->send(to_send.data(), to_send.size());
             d_pkt_n = (d_pkt_n + 1) % difi::VITA_PKT_MOD;
             d_samples_since_last_reference += tail_samples;
@@ -416,10 +417,11 @@ int difi_sink_cpp_impl<V, Transport, BitDepth>::work(
             d_burst_samples_remaining = 0;
         }
     }
-    this->d_logger->debug("Consumed {} samples, {} remaining in burst, {} available",
-                          samples_consumed,
-                          d_burst_samples_remaining,
-                          available_for_burst);
+    GR_LOG_DEBUG(this->d_logger,
+                 "Consumed " + std::to_string(samples_consumed) +
+                 " samples, " + std::to_string(d_burst_samples_remaining) +
+                 " remaining in burst, " + std::to_string(available_for_burst) +
+                 " available");
     return samples_consumed;
 }
 
