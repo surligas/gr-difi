@@ -951,3 +951,105 @@ BOOST_AUTO_TEST_CASE(t_system_timestamp_time_sources)
     BOOST_CHECK(parsed_hdr.tsf == difi::tsf_type::picoseconds);
 }
 
+BOOST_AUTO_TEST_CASE(t_flow_control_parse_and_pack)
+{
+    // Test 1: Parse a real capture frame (from crt-difi.pcap packet #649)
+    // 84 bytes: 21 words
+    const uint8_t pcap_fc[84] = {
+        0x68, 0x60, 0x00, 0x15, // w0: type 6, TSI UTC(1), TSF PICO(2), pkt 0, 21 words
+        0x00, 0x00, 0x00, 0x00, // w1: stream ID 0
+        0x00, 0x6a, 0x62, 0x1e, // w2: class ID OUI
+        0x00, 0x03, 0x00, 0x06, // w3: class ID (0x0003, packet class 0x0006)
+        0x00, 0x3b, 0xa5, 0xeb, // w4: message ID 3909099
+        0x00, 0x00, 0x00, 0xd7, // w5: controllee ID 215
+        0x94, 0xab, 0x70, 0x40, // w6: controller ID
+        0xa1, 0x00, 0x10, 0x00, // w7: full seconds
+        0x00, 0x00, 0x00, 0x00, // w8: frac upper
+        0x00, 0x00, 0x00, 0x00, // w9: frac lower
+        0x00, 0x00, 0x00, 0x00, // w10: CAM / reserved
+        0x40, 0x30, 0x00, 0x02, // w11: CIF 0
+        0x00, 0x00, 0x00, 0x02, // w12: CIF 1
+        0x00, 0x00, 0x00, 0x64, // w13: ref point = 100 (if_converter)
+        0x00, 0x00, 0x08, 0x95, // w14: sample rate upper
+        0x44, 0x00, 0x00, 0x00, // w15: sample rate lower (9.0 MHz)
+        0x00, 0x00, 0x00, 0x00, // w16: ts adjustment upper
+        0x00, 0x00, 0x00, 0x00, // w17: ts adjustment lower
+        0x00, 0x00, 0x00, 0x00, // w18: buffer size upper
+        0x1d, 0xcd, 0x5f, 0xff, // w19: buffer size lower (499,974,143 bytes)
+        0x00, 0x00, 0x00, 0x00  // w20: buffer level 0, no flags
+    };
+
+    auto fc_opt = difi::parse_flow_control(pcap_fc, sizeof(pcap_fc));
+    BOOST_REQUIRE(fc_opt.has_value());
+    BOOST_CHECK_EQUAL(static_cast<int>(fc_opt->type), static_cast<int>(difi::packet_type::command));
+    BOOST_CHECK(fc_opt->tsi == difi::tsi_type::utc);
+    BOOST_CHECK(fc_opt->tsf == difi::tsf_type::picoseconds);
+    BOOST_CHECK_EQUAL(fc_opt->stream_id, 0U);
+    BOOST_CHECK_EQUAL(fc_opt->class_id, 0x006a621e00030006ULL);
+    BOOST_CHECK_EQUAL(fc_opt->message_id, 0x3ba5ebU);
+    BOOST_CHECK_EQUAL(fc_opt->controllee_id, 0xd7U);
+    BOOST_CHECK_EQUAL(fc_opt->controller_id, 0x94ab7040U);
+    BOOST_CHECK_EQUAL(fc_opt->full, 0xa1001000U);
+    BOOST_CHECK_EQUAL(fc_opt->frac, 0ULL);
+    BOOST_CHECK_EQUAL(fc_opt->cif0, 0x40300002U);
+    BOOST_CHECK_EQUAL(fc_opt->cif1, 0x00000002U);
+    BOOST_CHECK(fc_opt->ref_point == difi::reference_point::if_converter);
+    BOOST_CHECK_CLOSE(fc_opt->sample_rate, 9000000.0, 1e-4);
+    BOOST_CHECK_EQUAL(fc_opt->buffer_size, 499998719ULL);
+    BOOST_CHECK_EQUAL(fc_opt->buffer_level, 0U);
+    BOOST_CHECK_CLOSE(fc_opt->buffer_fill_pct(), 0.0f, 1e-4);
+    BOOST_CHECK(!fc_opt->overflow);
+    BOOST_CHECK(!fc_opt->nearly_full);
+    BOOST_CHECK(!fc_opt->nearly_empty);
+    BOOST_CHECK(!fc_opt->underflow);
+
+    // Test 2: Flow control packet with buffer level and flags
+    difi::flow_control fc_tx;
+    fc_tx.tsi = difi::tsi_type::posix;
+    fc_tx.tsf = difi::tsf_type::picoseconds;
+    fc_tx.pkt_n = 5;
+    fc_tx.stream_id = 42;
+    fc_tx.message_id = 1234;
+    fc_tx.controllee_id = 10;
+    fc_tx.controller_id = 20;
+    fc_tx.full = 1700000000U;
+    fc_tx.frac = 250000000000ULL;
+    fc_tx.sample_rate = 10000000.0;
+    fc_tx.buffer_size = 1048576;
+    fc_tx.buffer_level = 2048; // ~50.01%
+    fc_tx.nearly_full = true;
+    fc_tx.nearly_empty = false;
+    fc_tx.overflow = false;
+    fc_tx.underflow = true;
+
+    auto packed = difi::pack_flow_control(fc_tx);
+    BOOST_CHECK_EQUAL(packed.size(), difi::FLOW_CONTROL_SIZE);
+
+    auto parsed_tx = difi::parse_flow_control(packed.data(), packed.size());
+    BOOST_REQUIRE(parsed_tx.has_value());
+    BOOST_CHECK_EQUAL(static_cast<int>(parsed_tx->type), static_cast<int>(difi::packet_type::command));
+    BOOST_CHECK(parsed_tx->tsi == difi::tsi_type::posix);
+    BOOST_CHECK(parsed_tx->tsf == difi::tsf_type::picoseconds);
+    BOOST_CHECK_EQUAL(parsed_tx->pkt_n, 5);
+    BOOST_CHECK_EQUAL(parsed_tx->stream_id, 42U);
+    BOOST_CHECK_EQUAL(parsed_tx->message_id, 1234U);
+    BOOST_CHECK_EQUAL(parsed_tx->controllee_id, 10U);
+    BOOST_CHECK_EQUAL(parsed_tx->controller_id, 20U);
+    BOOST_CHECK_EQUAL(parsed_tx->full, 1700000000U);
+    BOOST_CHECK_EQUAL(parsed_tx->frac, 250000000000ULL);
+    BOOST_CHECK_CLOSE(parsed_tx->sample_rate, 10000000.0, 1e-4);
+    BOOST_CHECK_EQUAL(parsed_tx->buffer_size, 1048576ULL);
+    BOOST_CHECK_EQUAL(parsed_tx->buffer_level, 2048U);
+    BOOST_CHECK_CLOSE(parsed_tx->buffer_fill_pct(), (2048.0f / 4095.0f) * 100.0f, 1e-3);
+    BOOST_CHECK(parsed_tx->nearly_full);
+    BOOST_CHECK(!parsed_tx->nearly_empty);
+    BOOST_CHECK(!parsed_tx->overflow);
+    BOOST_CHECK(parsed_tx->underflow);
+
+    // Invalid buffers
+    BOOST_CHECK(!difi::parse_flow_control(packed.data(), 83).has_value());
+    packed[0] = 0x10; // Change packet type to data
+    BOOST_CHECK(!difi::parse_flow_control(packed.data(), packed.size()).has_value());
+}
+
+

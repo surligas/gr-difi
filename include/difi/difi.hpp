@@ -64,7 +64,8 @@ public:
         unknown = 0, ///< Unknown packet type
         data = 1,    ///< Standard Flow Signal Data Packet
         context = 4, ///< Standard Flow Signal Context Packet
-        version = 5  ///< Version Flow Signal Context Packet (DIFI 1.1 / 1.2.1)
+        version = 5, ///< Version Flow Signal Context Packet (DIFI 1.1 / 1.2.1)
+        command = 6  ///< Command / Flow Control Packet (VITA 49.2 / DIFI Flow Control)
     };
 
     /**
@@ -211,10 +212,49 @@ public:
         tsf_type tsf = tsf_type::none;  ///< Timestamp Fractional type (bits 21-20)
     };
 
+    /**
+     * @brief Flow control command packet representation (Packet Class 0x0006 / 0x0005).
+     *
+     * Represents the 84-byte (21 32-bit words) timing flow control packet defined in
+     * IEEE-ISTO 4900-2021 Section 4.3 and VITA 49.2, used by hardware to communicate
+     * buffer fill level and status back to the stream source.
+     */
+    struct DIFI_API flow_control {
+        packet_type type = packet_type::command; ///< Packet type (6)
+        uint8_t pkt_n = 0;              ///< Modulo-16 sequence number
+        uint32_t stream_id = 0;         ///< Stream identifier (word 1)
+        uint64_t class_id = 0;          ///< Class identifier (words 2-3)
+        uint32_t message_id = 0;        ///< Message ID (word 4)
+        uint32_t controllee_id = 0;     ///< Controllee ID (word 5)
+        uint32_t controller_id = 0;     ///< Controller ID (word 6)
+        uint32_t full = 0;              ///< Integer seconds timestamp (word 7)
+        uint64_t frac = 0;              ///< Fractional timestamp (words 8-9)
+        uint32_t cif0 = 0;              ///< Control Indicator Field 0 (word 11)
+        uint32_t cif1 = 0;              ///< Control Indicator Field 1 (word 12)
+        reference_point ref_point = reference_point::if_converter; ///< Reference Point (word 13)
+        double sample_rate = 0.0;       ///< Sample rate in Hz (words 14-15)
+        int64_t timestamp_adjustment = 0; ///< Timestamp adjustment in femtoseconds (words 16-17)
+        uint64_t buffer_size = 0;       ///< Stream sink buffer size in bytes (words 18-19)
+        uint16_t buffer_level = 0;      ///< 12-bit buffer level 0..4095 (word 20 bits 15-4)
+        bool overflow = false;          ///< Buffer overflow flag (word 20 bit 3)
+        bool nearly_full = false;       ///< Nearly full flag (word 20 bit 2)
+        bool nearly_empty = false;      ///< Nearly empty flag (word 20 bit 1)
+        bool underflow = false;         ///< Buffer underflow flag (word 20 bit 0)
+        tsi_type tsi = tsi_type::none;  ///< Timestamp Integer type (bits 23-22)
+        tsf_type tsf = tsf_type::none;  ///< Timestamp Fractional type (bits 21-20)
+
+        /// Returns buffer fill level as a percentage (0.0% to 100.0%).
+        float buffer_fill_pct() const {
+            return (static_cast<float>(buffer_level) / 4095.0f) * 100.0f;
+        }
+    };
+
     // --- Wire Format Constants ---
     static constexpr size_t HEADER_SIZE = 28;
     static constexpr size_t STANDARD_CONTEXT_SIZE = 108;
     static constexpr size_t ALT_CONTEXT_SIZE = 72;
+    static constexpr size_t FLOW_CONTROL_SIZE = 84;
+    static constexpr size_t FLOW_CONTROL_WORDS = 21;
     static constexpr uint8_t PACKET_MOD = 16;
     static constexpr uint64_t PICO_PER_SEC = 1000000000000ULL;
 
@@ -701,6 +741,35 @@ public:
                                                  uint64_t frac,
                                                  size_t packet_size);
 
+    // --- Flow Control Operations ---
+
+    /**
+     * @brief Parses an 84-byte VITA 49.2 / DIFI Flow Control packet (Packet Class 0x0006 / 0x0005).
+     *
+     * @param buf pointer to packet buffer
+     * @param len buffer length in bytes (must be at least 84)
+     * @return std::optional<flow_control> parsed flow control struct, or std::nullopt if invalid
+     */
+    static std::optional<flow_control> parse_flow_control(const void* buf, size_t len);
+
+    /**
+     * @brief Parses a VITA 49.2 / DIFI Flow Control packet from a byte span.
+     */
+    static std::optional<flow_control> parse_flow_control(std::span<const uint8_t> span);
+
+    /**
+     * @brief Serializes a flow_control struct into an 84-byte destination byte span.
+     *
+     * @param fc flow control struct
+     * @param out destination byte span (must have at least 84 bytes)
+     */
+    static void pack_flow_control(const flow_control& fc, std::span<uint8_t> out);
+
+    /**
+     * @brief Serializes a flow_control struct into a newly allocated vector.
+     */
+    static std::vector<uint8_t> pack_flow_control(const flow_control& fc);
+
     // --- Timestamp Arithmetic ---
 
     /**
@@ -1007,6 +1076,8 @@ using standard_context = difi::standard_context;
 using alternative_context = difi::alternative_context;
 using difi_context = difi::difi_context;
 using context_variant = difi::context_variant;
+using flow_control = difi::flow_control;
+using difi_flow_control = difi::flow_control;
 using difi_handler = difi;
 
 inline void pack_u32(void* ptr, uint32_t val)

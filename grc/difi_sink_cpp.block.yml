@@ -8,7 +8,7 @@ label: DIFI Sink
 category: '[DIFI]'
 templates:
   imports: import difi
-  make: difi.difi_sink_cpp_${ 'sc8' if bit_depth == '8' else 'sc16' }(${ip_addr}, ${port}, ${sample_rate}, ${data_size}, ${stream_id}, ${context_packet_send_count}, ${ '""' if mode == 'streaming' else length_tag_name }, int(${lead_time_us}), int(${context_pack_size}), int(${protocol}), float(${rf_freq}), float(${if_freq}), float(${bandwidth}), float(${rf_gain}), float(${if_gain}), float(${ref_level}), float(${if_band_offset}), int(${ref_point}), int(${time_source}))
+  make: difi.difi_sink_cpp_${ 'sc8' if bit_depth == '8' else 'sc16' }(${ip_addr}, ${port}, ${sample_rate}, ${data_size}, ${stream_id}, ${context_packet_send_count}, ${ '""' if mode == 'streaming' else length_tag_name }, int(${lead_time_us}), int(${context_pack_size}), int(${protocol}), float(${rf_freq}), float(${if_freq}), float(${bandwidth}), float(${rf_gain}), float(${if_gain}), float(${ref_level}), float(${if_band_offset}), int(${ref_point}), int(${time_source}), bool(${rate_control}), float(${max_buffer_fill_pct}))
   callbacks:
   - set_rf_freq(${rf_freq})
   - set_if_freq(${if_freq})
@@ -19,6 +19,8 @@ templates:
   - set_if_band_offset(${if_band_offset})
   - set_ref_point(difi.reference_point(${ref_point}))
   - set_time_source(difi.tsi_type(${time_source}))
+  - set_rate_control(${rate_control})
+  - set_max_buffer_fill_pct(${max_buffer_fill_pct})
 
 parameters:
 - id: bit_depth
@@ -95,6 +97,19 @@ parameters:
   dtype: int
   default: 10000
   hide: ${ ('none' if mode == 'burst' else 'all') }
+- id: rate_control
+  label: Rate Control
+  category: Time
+  dtype: enum
+  options: ['False', 'True']
+  option_labels: ['Disabled', 'Enabled']
+  default: 'False'
+- id: max_buffer_fill_pct
+  label: Max Buffer Fill (%)
+  category: Time
+  dtype: float
+  default: '50.0'
+  hide: ${ ('none' if rate_control == 'True' else 'all') }
 
 # RF Options Tab
 - id: rf_freq

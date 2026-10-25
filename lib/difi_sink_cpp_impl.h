@@ -11,8 +11,12 @@
 #include <difi/difi_sink_cpp.h>
 #include <difi/difi.hpp>
 #include <arpa/inet.h>
+#include <atomic>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <span>
+#include <thread>
 #include <vector>
 
 namespace gr {
@@ -35,12 +39,26 @@ namespace gr {
         std::pair<uint32_t, uint64_t> add_frac_full();
         void reanchor_timestamp();
 
+        void rx_loop();
+        void start_rx_thread();
+        void stop_rx_thread();
+        void wait_rate_control(uint32_t num_samples);
+
         difi::context<V> m_context;
         std::vector<uint8_t> m_context_buffer;
         std::vector<uint8_t> m_data_buffer;
         uint64_t m_class_id;
 
         std::unique_ptr<Transport> m_transport;
+
+        std::atomic<bool> m_rate_control{false};
+        std::atomic<float> m_max_buffer_fill_pct{50.0f};
+        std::thread m_rx_thread;
+        std::atomic<bool> m_rx_running{false};
+        mutable std::mutex m_fc_mutex;
+        std::condition_variable m_fc_cv;
+        std::atomic<bool> m_first_fc_received{false};
+        difi::flow_control m_last_fc{};
 
         static constexpr uint32_t s_bytes_per_sample = sizeof(sample_t);
         static constexpr int s_bit_depth_val = static_cast<int>(BitDepth);
@@ -72,8 +90,13 @@ namespace gr {
                         float rf_gain = 0.0f, float if_gain = 0.0f, float ref_level = 0.0f,
                         double if_band_offset = 0.0,
                         difi::reference_point ref_point = difi::reference_point::if_converter,
-                        difi::tsi_type time_source = difi::tsi_type::posix);
-      ~difi_sink_cpp_impl() override = default;
+                        difi::tsi_type time_source = difi::tsi_type::posix,
+                        bool rate_control = false,
+                        float max_buffer_fill_pct = 50.0f);
+      ~difi_sink_cpp_impl() override;
+
+      bool start() override;
+      bool stop() override;
 
       // Where all the action really happens
       int work(
@@ -189,6 +212,57 @@ namespace gr {
           }
       }
       difi::tsi_type time_source() const override { return m_time_source; }
+
+      void set_rate_control(bool enabled) override
+      {
+          if (m_rate_control.load() == enabled) return;
+          m_rate_control.store(enabled);
+          if (enabled) {
+              start_rx_thread();
+          } else {
+              stop_rx_thread();
+          }
+      }
+      bool rate_control() const override { return m_rate_control.load(); }
+
+      void set_max_buffer_fill_pct(float pct) override { m_max_buffer_fill_pct.store(pct); }
+      float max_buffer_fill_pct() const override { return m_max_buffer_fill_pct.load(); }
+
+      float last_buffer_fill_pct() const override
+      {
+          std::lock_guard<std::mutex> lock(m_fc_mutex);
+          return m_last_fc.buffer_fill_pct();
+      }
+      uint16_t last_buffer_level() const override
+      {
+          std::lock_guard<std::mutex> lock(m_fc_mutex);
+          return m_last_fc.buffer_level;
+      }
+      uint64_t device_buffer_size() const override
+      {
+          std::lock_guard<std::mutex> lock(m_fc_mutex);
+          return m_last_fc.buffer_size;
+      }
+      bool device_nearly_full() const override
+      {
+          std::lock_guard<std::mutex> lock(m_fc_mutex);
+          return m_last_fc.nearly_full;
+      }
+      bool device_nearly_empty() const override
+      {
+          std::lock_guard<std::mutex> lock(m_fc_mutex);
+          return m_last_fc.nearly_empty;
+      }
+      bool device_overflow() const override
+      {
+          std::lock_guard<std::mutex> lock(m_fc_mutex);
+          return m_last_fc.overflow;
+      }
+      bool device_underflow() const override
+      {
+          std::lock_guard<std::mutex> lock(m_fc_mutex);
+          return m_last_fc.underflow;
+      }
 
       const difi::context<V>& typed_context() const { return m_context; }
       void set_typed_context(const difi::context<V>& ctx) { m_context = ctx; }

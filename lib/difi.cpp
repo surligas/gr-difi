@@ -83,6 +83,8 @@ difi::header difi::parse_header(const void* buf, size_t len)
         }
     } else if (type_val == static_cast<uint8_t>(packet_type::version)) {
         h.type = packet_type::version;
+    } else if (type_val == static_cast<uint8_t>(packet_type::command)) {
+        h.type = packet_type::command;
     } else {
         h.type = packet_type::unknown;
     }
@@ -469,6 +471,128 @@ difi::context_variant difi::make_context(context_version version,
         return make_context<context_version::alternative>(cfg);
     }
     return make_context<context_version::standard>(cfg);
+}
+
+std::optional<difi::flow_control> difi::parse_flow_control(const void* buf, size_t len)
+{
+    if (!buf || len < FLOW_CONTROL_SIZE) {
+        return std::nullopt;
+    }
+
+    const uint8_t* in = static_cast<const uint8_t*>(buf);
+    uint32_t w0 = unpack_u32(&in[0]);
+    uint8_t type_val = static_cast<uint8_t>((w0 >> 28) & 0x0f);
+    if (type_val != static_cast<uint8_t>(packet_type::command)) {
+        return std::nullopt;
+    }
+
+    uint16_t size_words = static_cast<uint16_t>(w0 & 0xffff);
+    if (size_words < FLOW_CONTROL_WORDS) {
+        return std::nullopt;
+    }
+
+    flow_control fc;
+    fc.type = packet_type::command;
+    fc.pkt_n = static_cast<uint8_t>((w0 >> 16) & 0x0f);
+    fc.tsi = static_cast<tsi_type>((w0 >> 22) & 0x03);
+    fc.tsf = static_cast<tsf_type>((w0 >> 20) & 0x03);
+
+    fc.stream_id = unpack_u32(&in[4]);
+    fc.class_id = unpack_u64(&in[8]);
+    fc.message_id = unpack_u32(&in[16]);
+    fc.controllee_id = unpack_u32(&in[20]);
+    fc.controller_id = unpack_u32(&in[24]);
+    fc.full = unpack_u32(&in[28]);
+    fc.frac = unpack_u64(&in[32]);
+    // in[40..43] is reserved / CAM
+    fc.cif0 = unpack_u32(&in[44]);
+    fc.cif1 = unpack_u32(&in[48]);
+    fc.ref_point = static_cast<reference_point>(unpack_u32(&in[52]));
+
+    // Sample rate: 64-bit VITA float with integer radix at bit 20
+    uint64_t sr_raw = unpack_u64(&in[56]);
+    fc.sample_rate = static_cast<double>(sr_raw) / static_cast<double>(1ULL << 20);
+
+    // Timestamp adjustment in femtoseconds
+    fc.timestamp_adjustment = static_cast<int64_t>(unpack_u64(&in[64]));
+
+    // Buffer size in bytes
+    fc.buffer_size = unpack_u64(&in[72]);
+
+    // Word 20: Buffer Level (bits 15-4) and Discrete Indicators (bits 3-0)
+    uint32_t w20 = unpack_u32(&in[80]);
+    fc.buffer_level = static_cast<uint16_t>((w20 >> 4) & 0x0fff);
+    fc.overflow = (w20 & 0x8) != 0;
+    fc.nearly_full = (w20 & 0x4) != 0;
+    fc.nearly_empty = (w20 & 0x2) != 0;
+    fc.underflow = (w20 & 0x1) != 0;
+
+    return fc;
+}
+
+std::optional<difi::flow_control> difi::parse_flow_control(std::span<const uint8_t> span)
+{
+    return parse_flow_control(span.data(), span.size());
+}
+
+void difi::pack_flow_control(const flow_control& fc, std::span<uint8_t> out)
+{
+    if (out.size() < FLOW_CONTROL_SIZE) {
+        throw std::invalid_argument(
+            "Destination span too small for flow control packet (need 84 bytes)");
+    }
+
+    std::fill(out.begin(), out.begin() + FLOW_CONTROL_SIZE, 0);
+    uint8_t* p = out.data();
+
+    uint32_t static_bits = 0x68000000U |
+                           ((static_cast<uint32_t>(fc.tsi) & 0x3U) << 22) |
+                           ((static_cast<uint32_t>(fc.tsf) & 0x3U) << 20);
+    uint32_t w0 = static_bits |
+                  ((static_cast<uint32_t>(fc.pkt_n) & 0x0fU) << 16) |
+                  static_cast<uint32_t>(FLOW_CONTROL_WORDS);
+
+    pack_u32(&p[0], w0);
+    pack_u32(&p[4], fc.stream_id);
+
+    uint64_t cid = fc.class_id;
+    if (cid == 0) {
+        cid = make_class_id(oui::difi,
+                            packet_class::real_time_flow_control,
+                            information_class::sample_count_data_plane);
+    }
+    pack_u64(&p[8], cid);
+    pack_u32(&p[16], fc.message_id);
+    pack_u32(&p[20], fc.controllee_id);
+    pack_u32(&p[24], fc.controller_id);
+    pack_u32(&p[28], fc.full);
+    pack_u64(&p[32], fc.frac);
+    pack_u32(&p[40], 0); // Reserved
+
+    uint32_t cif0 = fc.cif0 != 0 ? fc.cif0 : 0x40300002U;
+    uint32_t cif1 = fc.cif1 != 0 ? fc.cif1 : 0x00000002U;
+    pack_u32(&p[44], cif0);
+    pack_u32(&p[48], cif1);
+    pack_u32(&p[52], static_cast<uint32_t>(fc.ref_point));
+
+    uint64_t sr_raw = static_cast<uint64_t>(fc.sample_rate * static_cast<double>(1ULL << 20));
+    pack_u64(&p[56], sr_raw);
+    pack_u64(&p[64], static_cast<uint64_t>(fc.timestamp_adjustment));
+    pack_u64(&p[72], fc.buffer_size);
+
+    uint32_t w20 = ((static_cast<uint32_t>(fc.buffer_level) & 0x0fffU) << 4) |
+                   (fc.overflow ? 0x8U : 0U) |
+                   (fc.nearly_full ? 0x4U : 0U) |
+                   (fc.nearly_empty ? 0x2U : 0U) |
+                   (fc.underflow ? 0x1U : 0U);
+    pack_u32(&p[80], w20);
+}
+
+std::vector<uint8_t> difi::pack_flow_control(const flow_control& fc)
+{
+    std::vector<uint8_t> out(FLOW_CONTROL_SIZE);
+    pack_flow_control(fc, std::span<uint8_t>(out));
+    return out;
 }
 
 std::pair<uint32_t, uint64_t> difi::system_timestamp(uint32_t lead_time_us, tsi_type tsi)

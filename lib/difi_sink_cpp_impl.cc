@@ -36,7 +36,9 @@ difi_sink_cpp<V, Transport, BitDepth>::make(std::string ip_addr,
                                             float ref_level,
                                             double if_band_offset,
                                             difi::reference_point ref_point,
-                                            difi::tsi_type time_source)
+                                            difi::tsi_type time_source,
+                                            bool rate_control,
+                                            float max_buffer_fill_pct)
 {
     return gnuradio::make_block_sptr<difi_sink_cpp_impl<V, Transport, BitDepth>>(
         ip_addr,
@@ -55,7 +57,9 @@ difi_sink_cpp<V, Transport, BitDepth>::make(std::string ip_addr,
         ref_level,
         if_band_offset,
         ref_point,
-        time_source);
+        time_source,
+        rate_control,
+        max_buffer_fill_pct);
 }
 
 template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
@@ -77,7 +81,9 @@ difi_sink_cpp_impl<V, Transport, BitDepth>::difi_sink_cpp_impl(
     float ref_level,
     double if_band_offset,
     difi::reference_point ref_point,
-    difi::tsi_type time_source)
+    difi::tsi_type time_source,
+    bool rate_control,
+    float max_buffer_fill_pct)
     : gr::sync_block("difi_sink_cpp_impl",
                      gr::io_signature::make(1, 1, sizeof(sample_t)),
                      gr::io_signature::make(0, 0, 0)),
@@ -89,6 +95,11 @@ difi_sink_cpp_impl<V, Transport, BitDepth>::difi_sink_cpp_impl(
       d_context_packet_count(0),
       d_contex_packet_interval(context_interval)
 {
+    m_rate_control.store(rate_control);
+    m_max_buffer_fill_pct.store(max_buffer_fill_pct);
+    m_first_fc_received.store(false);
+    m_rx_running.store(false);
+
     m_transport = std::make_unique<Transport>(ip_addr, port);
 
     if (!m_transport) {
@@ -139,6 +150,120 @@ difi_sink_cpp_impl<V, Transport, BitDepth>::difi_sink_cpp_impl(
 
 template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
 requires valid_bit_depth<BitDepth>
+difi_sink_cpp_impl<V, Transport, BitDepth>::~difi_sink_cpp_impl()
+{
+    stop_rx_thread();
+}
+
+template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+requires valid_bit_depth<BitDepth>
+bool difi_sink_cpp_impl<V, Transport, BitDepth>::start()
+{
+    if (m_rate_control.load()) {
+        m_first_fc_received.store(false);
+        start_rx_thread();
+    }
+    return gr::sync_block::start();
+}
+
+template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+requires valid_bit_depth<BitDepth>
+bool difi_sink_cpp_impl<V, Transport, BitDepth>::stop()
+{
+    stop_rx_thread();
+    return gr::sync_block::stop();
+}
+
+template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+requires valid_bit_depth<BitDepth>
+void difi_sink_cpp_impl<V, Transport, BitDepth>::start_rx_thread()
+{
+    if (!m_rx_running.exchange(true)) {
+        m_rx_thread = std::thread(&difi_sink_cpp_impl::rx_loop, this);
+    }
+}
+
+template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+requires valid_bit_depth<BitDepth>
+void difi_sink_cpp_impl<V, Transport, BitDepth>::stop_rx_thread()
+{
+    if (m_rx_running.exchange(false)) {
+        m_fc_cv.notify_all();
+        if (m_rx_thread.joinable()) {
+            m_rx_thread.join();
+        }
+    }
+}
+
+template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+requires valid_bit_depth<BitDepth>
+void difi_sink_cpp_impl<V, Transport, BitDepth>::rx_loop()
+{
+    uint8_t rx_buf[1500];
+    while (m_rx_running.load()) {
+        ssize_t ret = m_transport->recv(rx_buf, sizeof(rx_buf));
+        if (ret >= static_cast<ssize_t>(difi::FLOW_CONTROL_SIZE)) {
+            auto fc_opt = difi::parse_flow_control(rx_buf, static_cast<size_t>(ret));
+            if (fc_opt) {
+                {
+                    std::lock_guard<std::mutex> lock(m_fc_mutex);
+                    m_last_fc = *fc_opt;
+                    m_first_fc_received.store(true);
+                }
+                m_fc_cv.notify_all();
+            }
+        }
+    }
+}
+
+template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+requires valid_bit_depth<BitDepth>
+void difi_sink_cpp_impl<V, Transport, BitDepth>::wait_rate_control(uint32_t num_samples)
+{
+    if (!m_rate_control.load()) {
+        return;
+    }
+
+    if (!m_rx_running.load()) {
+        start_rx_thread();
+    }
+
+    // Handshake: wait for the first flow control frame
+    if (!m_first_fc_received.load()) {
+        std::unique_lock<std::mutex> lock(m_fc_mutex);
+        while (m_rx_running.load() && !m_first_fc_received.load()) {
+            lock.unlock();
+            send_context();
+            lock.lock();
+            m_fc_cv.wait_for(lock, std::chrono::milliseconds(500), [this]() {
+                return !m_rx_running.load() || m_first_fc_received.load();
+            });
+        }
+    }
+
+    if (!m_rx_running.load()) {
+        return;
+    }
+
+    // Rate limiting pacing
+    std::unique_lock<std::mutex> lock(m_fc_mutex);
+    if (!m_last_fc.nearly_empty && m_last_fc.buffer_fill_pct() >= m_max_buffer_fill_pct.load()) {
+        uint64_t dur_ns = (d_full_samp > 0)
+            ? (static_cast<uint64_t>(num_samples) * 1000000000ULL / d_full_samp)
+            : 1000000ULL;
+        if (dur_ns == 0) {
+            dur_ns = 1;
+        }
+        auto packet_duration = std::chrono::nanoseconds(dur_ns);
+        m_fc_cv.wait_for(lock, packet_duration, [this]() {
+            return !m_rx_running.load() || m_last_fc.nearly_empty ||
+                   m_last_fc.buffer_fill_pct() < m_max_buffer_fill_pct.load();
+        });
+    }
+}
+
+template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+requires valid_bit_depth<BitDepth>
 void difi_sink_cpp_impl<V, Transport, BitDepth>::reanchor_timestamp()
 {
     auto [full, frac] = difi::system_timestamp(d_lead_time_us, m_time_source);
@@ -161,6 +286,10 @@ int difi_sink_cpp_impl<V, Transport, BitDepth>::work(
     if (m_length_tag_name.empty()) {
         int n_packets = noutput_items / d_samples_per_packet;
         for (int p = 0; p < n_packets; p++) {
+            wait_rate_control(d_samples_per_packet);
+            if (!m_rx_running.load() && m_rate_control.load()) {
+                return -1;
+            }
             if (d_packet_count % d_contex_packet_interval == 0) {
                 send_context();
             }
@@ -236,6 +365,10 @@ int difi_sink_cpp_impl<V, Transport, BitDepth>::work(
     int samples_consumed = 0;
 
     for (int p = 0; p < n_packets; p++) {
+        wait_rate_control(d_samples_per_packet);
+        if (!m_rx_running.load() && m_rate_control.load()) {
+            return -1;
+        }
         if (d_packet_count % d_contex_packet_interval == 0) {
             send_context();
         }
@@ -260,6 +393,10 @@ int difi_sink_cpp_impl<V, Transport, BitDepth>::work(
             d_burst_samples_remaining) {
             uint32_t tail_samples = static_cast<uint32_t>(d_burst_samples_remaining);
             size_t tail_payload_bytes = tail_samples * s_bytes_per_sample;
+            wait_rate_control(tail_samples);
+            if (!m_rx_running.load() && m_rate_control.load()) {
+                return -1;
+            }
             if (d_packet_count % d_contex_packet_interval == 0) {
                 send_context();
             }

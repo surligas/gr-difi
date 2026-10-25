@@ -14,6 +14,7 @@ import random
 import socket
 import struct
 import time
+import threading
 from multiprocessing import Process
 import pytest
 import numpy as np
@@ -1035,6 +1036,85 @@ class qa_testcpp(gr_unittest.TestCase):
         assert difi.make_context_static_bits(difi.tsi_type.posix) == 0x49e00000
         assert difi.make_context_static_bits(difi.tsi_type.utc) == 0x49600000
         assert difi.make_context_static_bits(difi.tsi_type.gps) == 0x49a00000
+
+        # Test flow_control struct, pack/parse and sink getters/setters in Python
+        fc = difi.flow_control()
+        fc.pkt_n = 3
+        fc.stream_id = 10
+        fc.sample_rate = 9000000.0
+        fc.buffer_size = 500000000
+        fc.buffer_level = 2048
+        fc.nearly_full = True
+        fc.nearly_empty = False
+        assert math.isclose(fc.buffer_fill_pct(), (2048 / 4095.0) * 100.0, rel_tol=1e-3)
+
+        raw_fc = difi.pack_flow_control(fc)
+        assert len(raw_fc) == 84
+        parsed_fc = difi.parse_flow_control(raw_fc)
+        assert parsed_fc is not None
+        assert parsed_fc.pkt_n == 3
+        assert parsed_fc.stream_id == 10
+        assert math.isclose(parsed_fc.sample_rate, 9000000.0, rel_tol=1e-4)
+        assert parsed_fc.buffer_level == 2048
+        assert parsed_fc.nearly_full is True
+        assert parsed_fc.nearly_empty is False
+        assert parsed_fc.type == difi.packet_type.command
+
+        assert sink_rf.rate_control() is False
+        assert sink_rf.max_buffer_fill_pct() == 50.0
+        sink_rf.set_rate_control(True)
+        assert sink_rf.rate_control() is True
+        sink_rf.set_max_buffer_fill_pct(75.0)
+        assert sink_rf.max_buffer_fill_pct() == 75.0
+        sink_rf.set_rate_control(False)
+        assert sink_rf.rate_control() is False
+
+    def test_sink_rate_control_handshake_and_flow(self):
+        sink_p, _ = get_open_ports()
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.bind(('127.0.0.1', sink_p))
+        sock.settimeout(2.0)
+
+        tb = gr.top_block()
+        src_data = [1, 2] * 256
+        src = blocks.vector_source_s(src_data, False, 2)
+        sink = difi_sink_cpp_sc16(
+            '127.0.0.1', sink_p, 1000000, 128,
+            stream_number=0, context_interval=100,
+            rate_control=True, max_buffer_fill_pct=50.0
+        )
+        tb.connect(src, sink)
+
+        tb_thread = threading.Thread(target=tb.run)
+        tb_thread.start()
+
+        try:
+            # 1. Handshake: Sink transmits initial context packet to announce itself
+            ctx_pkt, client_addr = sock.recvfrom(2048)
+            assert len(ctx_pkt) in (72, 108)
+
+            # 2. Hardware replies with flow control packet: buffer level 100, nearly_empty
+            fc = difi.flow_control()
+            fc.stream_id = 0
+            fc.buffer_size = 1000000
+            fc.buffer_level = 100
+            fc.nearly_empty = True
+            sock.sendto(difi.pack_flow_control(fc), client_addr)
+
+            # 3. Sink unblocks and transmits data packet
+            data_pkt, _ = sock.recvfrom(2048)
+            assert len(data_pkt) > 28
+
+            # Verify sink state reflected the flow control
+            time.sleep(0.05)
+            assert sink.last_buffer_level() == 100
+            assert sink.device_nearly_empty() is True
+        finally:
+            tb.stop()
+            tb.wait()
+            tb_thread.join()
+            sock.close()
+
 
 
 # helper functions

@@ -96,6 +96,18 @@ namespace gr {
       virtual difi::tsi_type time_source() const = 0;
       void set_tsi(difi::tsi_type tsi) { set_time_source(tsi); }
       difi::tsi_type tsi() const { return time_source(); }
+
+      virtual void set_rate_control(bool enabled) = 0;
+      virtual bool rate_control() const = 0;
+      virtual void set_max_buffer_fill_pct(float pct) = 0;
+      virtual float max_buffer_fill_pct() const = 0;
+      virtual float last_buffer_fill_pct() const = 0;
+      virtual uint16_t last_buffer_level() const = 0;
+      virtual uint64_t device_buffer_size() const = 0;
+      virtual bool device_nearly_full() const = 0;
+      virtual bool device_nearly_empty() const = 0;
+      virtual bool device_overflow() const = 0;
+      virtual bool device_underflow() const = 0;
     };
 
     /**
@@ -139,7 +151,9 @@ namespace gr {
           float ref_level = 0.0f,
           double if_band_offset = 0.0,
           difi::reference_point ref_point = difi::reference_point::if_converter,
-          difi::tsi_type time_source = difi::tsi_type::posix);
+          difi::tsi_type time_source = difi::tsi_type::posix,
+          bool rate_control = false,
+          float max_buffer_fill_pct = 50.0f);
     };
 
     typedef difi_sink_base difi_sink_cpp_sc8;
