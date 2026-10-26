@@ -254,8 +254,9 @@ transport change; do re-check it if you touch packing or unpacking.
 
 ## Git workflow
 
-Strict atomic commits: one logical change per commit, no unrelated edits mixed
-in. Finish a unit of work, then commit it before starting the next.
+Do not commit automatically. Never run `git commit` unless explicitly instructed
+by the user. When committing, follow strict atomic commits: one logical change
+per commit, no unrelated edits mixed in.
 
 ## Documentation
 
