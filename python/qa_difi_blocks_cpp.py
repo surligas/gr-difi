@@ -1222,6 +1222,65 @@ class qa_testcpp(gr_unittest.TestCase):
             tb_thread.join()
             sock.close()
 
+    def test_sink_rate_control_drain_sleep_and_early_wakeup(self):
+        sink_p, _ = get_open_ports()
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.bind(('127.0.0.1', sink_p))
+        sock.settimeout(2.0)
+
+        # 10,000 samples/sec * 4 bytes/sample = 40,000 bytes/sec drain rate.
+        # Buffer size = 40,000 bytes (1.0s capacity), max_buffer_fill_pct = 50% (20,000 bytes).
+        # Target drain level = 25% (10,000 bytes).
+        # Each packet is 100 samples = 400 bytes.
+        tb = gr.top_block()
+        src_data = [1, 2] * 2000
+        src = blocks.vector_source_s(src_data, True, 2)
+        sink = difi_sink_cpp_sc16(
+            '127.0.0.1', sink_p, 10000, 100,
+            stream_number=0, context_interval=1000,
+            rate_control=True, max_buffer_fill_pct=50.0
+        )
+        tb.connect(src, sink)
+
+        tb_thread = threading.Thread(target=tb.run)
+        tb_thread.start()
+
+        try:
+            # 1. Handshake context packet
+            ctx_pkt, client_addr = sock.recvfrom(2048)
+            assert len(ctx_pkt) in (72, 108)
+
+            # 2. Send FC packet with buffer already above threshold (75% = 30,000 bytes)
+            # Without early wakeup, draining from 30,000 to 10,000 bytes at 40,000 B/s takes 0.5s.
+            fc = difi.flow_control()
+            fc.stream_id = 0
+            fc.buffer_size = 40000
+            fc.buffer_level = int(0.75 * 4095)
+            fc.nearly_empty = False
+            sock.sendto(difi.pack_flow_control(fc), client_addr)
+
+            # Verify sink is sleeping and not pushing data packets during the first 100 ms
+            sock.settimeout(0.1)
+            with pytest.raises(socket.timeout):
+                sock.recvfrom(2048)
+
+            # 3. Send nearly_empty FC packet and verify sink wakes up ASAP (< 100 ms)
+            fc.buffer_level = 100
+            fc.nearly_empty = True
+            t0 = time.monotonic()
+            sock.sendto(difi.pack_flow_control(fc), client_addr)
+
+            sock.settimeout(0.5)
+            pkt, _ = sock.recvfrom(2048)
+            elapsed = time.monotonic() - t0
+            assert len(pkt) > 0
+            assert elapsed < 0.15
+        finally:
+            tb.stop()
+            tb.wait()
+            tb_thread.join()
+            sock.close()
+
 
 
 # helper functions

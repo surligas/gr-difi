@@ -43,6 +43,7 @@ namespace gr {
         void start_rx_thread();
         void stop_rx_thread();
         void wait_rate_control(uint32_t num_samples);
+        void update_estimated_fill(std::chrono::steady_clock::time_point now);
         void check_and_publish_flow_control(const difi::flow_control& fc);
 
         difi::context<V> m_context;
@@ -60,6 +61,8 @@ namespace gr {
         std::condition_variable m_fc_cv;
         std::atomic<bool> m_first_fc_received{false};
         difi::flow_control m_last_fc{};
+        double m_est_fill_bytes{0.0};
+        std::chrono::steady_clock::time_point m_last_update_time{};
 
         std::atomic<float> m_buffer_fill_delta{1.0f};
         bool m_fc_published{false};
@@ -235,7 +238,11 @@ namespace gr {
       }
       bool rate_control() const override { return m_rate_control.load(); }
 
-      void set_max_buffer_fill_pct(float pct) override { m_max_buffer_fill_pct.store(pct); }
+      void set_max_buffer_fill_pct(float pct) override
+      {
+          m_max_buffer_fill_pct.store(pct);
+          m_fc_cv.notify_all();
+      }
       float max_buffer_fill_pct() const override { return m_max_buffer_fill_pct.load(); }
 
       void set_buffer_fill_delta(float delta) override { m_buffer_fill_delta.store(delta); }

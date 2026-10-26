@@ -167,6 +167,11 @@ requires valid_bit_depth<BitDepth>
 bool difi_sink_cpp_impl<V, Transport, BitDepth>::start()
 {
     if (m_rate_control.load()) {
+        {
+            std::lock_guard<std::mutex> lock(m_fc_mutex);
+            m_est_fill_bytes = 0.0;
+            m_last_update_time = std::chrono::steady_clock::now();
+        }
         m_first_fc_received.store(false);
         m_fc_published = false;
         start_rx_thread();
@@ -221,12 +226,33 @@ void difi_sink_cpp_impl<V, Transport, BitDepth>::rx_loop()
         case difi::packet_type::command: {
             auto fc_opt = difi::parse_flow_control(pkt);
             if (fc_opt) {
+                bool should_wake = false;
                 {
                     std::lock_guard<std::mutex> lock(m_fc_mutex);
+                    bool first = !m_first_fc_received.load();
                     m_last_fc = *fc_opt;
+                    m_last_update_time = std::chrono::steady_clock::now();
+
+                    if (fc_opt->underflow || fc_opt->nearly_empty ||
+                        fc_opt->buffer_level == 0) {
+                        m_est_fill_bytes = 0.0;
+                        should_wake = true;
+                    } else if (fc_opt->buffer_size > 0) {
+                        m_est_fill_bytes =
+                            static_cast<double>(fc_opt->buffer_size) *
+                            (static_cast<double>(fc_opt->buffer_level) / 4095.0);
+                        if (fc_opt->buffer_fill_pct() < m_max_buffer_fill_pct.load()) {
+                            should_wake = true;
+                        }
+                    }
                     m_first_fc_received.store(true);
+                    if (first) {
+                        should_wake = true;
+                    }
                 }
-                m_fc_cv.notify_all();
+                if (should_wake) {
+                    m_fc_cv.notify_all();
+                }
                 check_and_publish_flow_control(*fc_opt);
             }
             break;
@@ -286,6 +312,26 @@ void difi_sink_cpp_impl<V, Transport, BitDepth>::check_and_publish_flow_control(
 
 template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
 requires valid_bit_depth<BitDepth>
+void difi_sink_cpp_impl<V, Transport, BitDepth>::update_estimated_fill(
+    std::chrono::steady_clock::time_point now)
+{
+    if (m_last_update_time.time_since_epoch().count() > 0) {
+        double elapsed_s =
+            std::chrono::duration<double>(now - m_last_update_time).count();
+        if (elapsed_s > 0.0) {
+            double samp_rate =
+                (d_samp_rate > 0.0) ? d_samp_rate : m_last_fc.sample_rate;
+            if (samp_rate > 0.0) {
+                double drained_bytes = elapsed_s * samp_rate * s_bytes_per_sample;
+                m_est_fill_bytes = std::max(0.0, m_est_fill_bytes - drained_bytes);
+            }
+        }
+    }
+    m_last_update_time = now;
+}
+
+template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+requires valid_bit_depth<BitDepth>
 void difi_sink_cpp_impl<V, Transport, BitDepth>::wait_rate_control(uint32_t num_samples)
 {
     if (!m_rate_control.load()) {
@@ -313,22 +359,44 @@ void difi_sink_cpp_impl<V, Transport, BitDepth>::wait_rate_control(uint32_t num_
         return;
     }
 
-    // Rate limiting pacing
+    // Rate limiting pacing:
+    // 1. Push samples until estimated or reported fill reaches max_buffer_fill_pct.
+    // 2. Once reached, sleep for the time needed to drain the excess above threshold.
+    // 3. Wake immediately if a flow control packet reports nearly_empty, underflow, empty,
+    //    or fill below max_buffer_fill_pct.
     std::unique_lock<std::mutex> lock(m_fc_mutex);
-    if (!m_last_fc.nearly_empty &&
-        m_last_fc.buffer_fill_pct() >= m_max_buffer_fill_pct.load()) {
-        /* Be a bit more conservative and sleep half the calculated duration */
-        uint64_t dur_ns = static_cast<uint64_t>(static_cast<double>(num_samples) *
-                                                1000000000.0 / d_samp_rate) /
-                          2;
-        if (dur_ns == 0) {
-            dur_ns = 1;
+    update_estimated_fill(std::chrono::steady_clock::now());
+
+    double samp_rate = (d_samp_rate > 0.0) ? d_samp_rate : m_last_fc.sample_rate;
+    double drain_rate_Bps = samp_rate * s_bytes_per_sample;
+    double pkt_bytes = static_cast<double>(num_samples) * s_bytes_per_sample;
+
+    if (m_last_fc.buffer_size > 0 && drain_rate_Bps > 0.0) {
+        double max_pct =
+            std::clamp(static_cast<double>(m_max_buffer_fill_pct.load()), 0.0, 100.0);
+        double max_fill_bytes =
+            static_cast<double>(m_last_fc.buffer_size) * (max_pct / 100.0);
+
+        if (m_est_fill_bytes >= max_fill_bytes) {
+            double bytes_to_drain = (m_est_fill_bytes - max_fill_bytes) + pkt_bytes;
+            uint64_t sleep_ns = static_cast<uint64_t>(
+                (bytes_to_drain / drain_rate_Bps) * 1000000000.0);
+            if (sleep_ns > 0) {
+                m_fc_cv.wait_for(
+                    lock, std::chrono::nanoseconds(sleep_ns), [this, max_fill_bytes]() {
+                        return !m_rx_running.load() || !m_rate_control.load() ||
+                               m_last_fc.nearly_empty || m_last_fc.underflow ||
+                               m_last_fc.buffer_level == 0 ||
+                               m_est_fill_bytes < max_fill_bytes;
+                    });
+                update_estimated_fill(std::chrono::steady_clock::now());
+                if (m_est_fill_bytes > max_fill_bytes - pkt_bytes) {
+                    m_est_fill_bytes = std::max(0.0, max_fill_bytes - pkt_bytes);
+                }
+            }
         }
-        auto packet_duration = std::chrono::nanoseconds(dur_ns);
-        m_fc_cv.wait_for(lock, packet_duration, [this]() {
-            return !m_rx_running.load() || m_last_fc.nearly_empty ||
-                   m_last_fc.buffer_fill_pct() < m_max_buffer_fill_pct.load();
-        });
+
+        m_est_fill_bytes += pkt_bytes;
     }
 }
 
