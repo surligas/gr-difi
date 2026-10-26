@@ -210,35 +210,41 @@ void difi_sink_cpp_impl<V, Transport, BitDepth>::rx_loop()
     uint8_t rx_buf[1500];
     while (m_rx_running.load()) {
         ssize_t ret = m_transport->recv(rx_buf, sizeof(rx_buf));
-        if (ret >= static_cast<ssize_t>(difi::HEADER_SIZE)) {
-            uint32_t w0 = difi::unpack_u32(rx_buf);
-            uint8_t type_val = static_cast<uint8_t>((w0 >> 28) & 0x0f);
-            if (type_val == static_cast<uint8_t>(difi::packet_type::command)) {
-                if (ret >= static_cast<ssize_t>(difi::FLOW_CONTROL_SIZE)) {
-                    auto fc_opt = difi::parse_flow_control(rx_buf, static_cast<size_t>(ret));
-                    if (fc_opt) {
-                        {
-                            std::lock_guard<std::mutex> lock(m_fc_mutex);
-                            m_last_fc = *fc_opt;
-                            m_first_fc_received.store(true);
-                        }
-                        m_fc_cv.notify_all();
-                        check_and_publish_flow_control(*fc_opt);
-                    }
+        if (ret < static_cast<ssize_t>(difi::HEADER_SIZE)) {
+            continue;
+        }
+
+        std::span<const uint8_t> pkt(rx_buf, static_cast<size_t>(ret));
+        auto h = difi::parse_header(pkt);
+
+        switch (h.type) {
+        case difi::packet_type::command: {
+            auto fc_opt = difi::parse_flow_control(pkt);
+            if (fc_opt) {
+                {
+                    std::lock_guard<std::mutex> lock(m_fc_mutex);
+                    m_last_fc = *fc_opt;
+                    m_first_fc_received.store(true);
                 }
-            } else if (type_val == static_cast<uint8_t>(difi::packet_type::context)) {
-                if (ret >= static_cast<ssize_t>(difi::ALT_CONTEXT_SIZE)) {
-                    try {
-                        auto ctx_var = difi::parse_context(rx_buf, static_cast<size_t>(ret));
-                        auto h = difi::parse_header(rx_buf, static_cast<size_t>(ret));
-                        pmt::pmt_t pmt_ctx = difi::context_to_pmt(h, ctx_var);
-                        this->message_port_pub(pmt::intern("status"), pmt_ctx);
-                    } catch (const std::exception& e) {
-                        GR_LOG_WARN(this->d_logger,
-                                    "Failed to parse received context packet: " + std::string(e.what()));
-                    }
-                }
+                m_fc_cv.notify_all();
+                check_and_publish_flow_control(*fc_opt);
             }
+            break;
+        }
+        case difi::packet_type::context: {
+            try {
+                auto ctx_var = difi::parse_context(pkt);
+                this->message_port_pub(pmt::intern("status"),
+                                       difi::context_to_pmt(h, ctx_var));
+            } catch (const std::exception& e) {
+                GR_LOG_WARN(this->d_logger,
+                            "Failed to parse received context packet: " +
+                                std::string(e.what()));
+            }
+            break;
+        }
+        default:
+            break;
         }
     }
 }
