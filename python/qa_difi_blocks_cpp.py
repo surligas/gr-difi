@@ -23,6 +23,7 @@ from difi import (difi_source_cpp_fc32, difi_source_cpp_sc8,
                   difi_sink_cpp, difi_sink_cpp_sc8, difi_sink_cpp_sc16,
                   DATA_PACKET_METADATA_FORMAT, VITA_PKT_MOD,
                   CONTEX_ALT_PACK_STRUCT_FORMAT, DIFI_HEADER_SIZE)
+import pmt
 from gnuradio import gr, gr_unittest, blocks
 
 
@@ -1062,12 +1063,26 @@ class qa_testcpp(gr_unittest.TestCase):
 
         assert sink_rf.rate_control() is False
         assert sink_rf.max_buffer_fill_pct() == 50.0
+        assert sink_rf.buffer_fill_delta() == 1.0
+        sink_rf.set_buffer_fill_delta(2.5)
+        assert sink_rf.buffer_fill_delta() == 2.5
+        sink_rf.set_buffer_fill_delta(1.0)
         sink_rf.set_rate_control(True)
         assert sink_rf.rate_control() is True
         sink_rf.set_max_buffer_fill_pct(75.0)
         assert sink_rf.max_buffer_fill_pct() == 75.0
         sink_rf.set_rate_control(False)
         assert sink_rf.rate_control() is False
+
+        # Test flow_control_to_pmt
+        fc_pmt = difi.flow_control_to_pmt(fc)
+        assert pmt.is_dict(fc_pmt)
+        assert math.isclose(pmt.to_double(pmt.dict_ref(fc_pmt, pmt.intern("buffer_fill_pct"), pmt.PMT_NIL)),
+                            (2048 / 4095.0) * 100.0, rel_tol=1e-3)
+        assert pmt.to_long(pmt.dict_ref(fc_pmt, pmt.intern("buffer_level"), pmt.PMT_NIL)) == 2048
+        assert pmt.to_uint64(pmt.dict_ref(fc_pmt, pmt.intern("buffer_size"), pmt.PMT_NIL)) == 500000000
+        assert pmt.to_bool(pmt.dict_ref(fc_pmt, pmt.intern("nearly_full"), pmt.PMT_NIL)) is True
+        assert pmt.to_bool(pmt.dict_ref(fc_pmt, pmt.intern("nearly_empty"), pmt.PMT_NIL)) is False
 
     def test_sink_rate_control_handshake_and_flow(self):
         sink_p, _ = get_open_ports()
@@ -1109,6 +1124,98 @@ class qa_testcpp(gr_unittest.TestCase):
             time.sleep(0.05)
             assert sink.last_buffer_level() == 100
             assert sink.device_nearly_empty() is True
+        finally:
+            tb.stop()
+            tb.wait()
+            tb_thread.join()
+            sock.close()
+
+    def test_sink_status_message_port_and_throttling(self):
+        sink_p, _ = get_open_ports()
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.bind(('127.0.0.1', sink_p))
+        sock.settimeout(2.0)
+
+        tb = gr.top_block()
+        src_data = [1, 2] * 256
+        src = blocks.vector_source_s(src_data, True, 2)
+        sink = difi_sink_cpp_sc16(
+            '127.0.0.1', sink_p, 1000000, 128,
+            stream_number=0, context_interval=100,
+            rate_control=True, max_buffer_fill_pct=50.0,
+            buffer_fill_delta=5.0
+        )
+        msg_debug = blocks.message_debug()
+        tb.connect(src, sink)
+        tb.msg_connect(sink, "status", msg_debug, "store")
+
+        tb_thread = threading.Thread(target=tb.run)
+        tb_thread.start()
+
+        try:
+            # 1. Receive context packet emitted by sink
+            ctx_pkt, client_addr = sock.recvfrom(2048)
+            assert len(ctx_pkt) in (72, 108)
+
+            # 2. Hardware sends first flow control packet (level = 1000, ~24.4%)
+            fc = difi.flow_control()
+            fc.stream_id = 0
+            fc.buffer_size = 1000000
+            fc.buffer_level = 1000
+            fc.overflow = False
+            fc.nearly_full = False
+            fc.nearly_empty = False
+            fc.underflow = False
+            sock.sendto(difi.pack_flow_control(fc), client_addr)
+
+            # Wait for first message to be published
+            for _ in range(50):
+                if msg_debug.num_messages() >= 1:
+                    break
+                time.sleep(0.01)
+
+            assert msg_debug.num_messages() == 1
+            msg0 = msg_debug.get_message(0)
+            assert pmt.is_dict(msg0)
+            fill_pct0 = pmt.to_double(pmt.dict_ref(msg0, pmt.intern("buffer_fill_pct"), pmt.PMT_NIL))
+            assert math.isclose(fill_pct0, (1000 / 4095.0) * 100.0, rel_tol=1e-3)
+            assert pmt.to_long(pmt.dict_ref(msg0, pmt.intern("buffer_level"), pmt.PMT_NIL)) == 1000
+            assert pmt.to_bool(pmt.dict_ref(msg0, pmt.intern("overflow"), pmt.PMT_NIL)) is False
+
+            # 3. Hardware sends small buffer level change (< 5.0% delta)
+            # 1020 is ~24.9% (delta ~ 0.5% < 5.0%)
+            fc.buffer_level = 1020
+            sock.sendto(difi.pack_flow_control(fc), client_addr)
+            time.sleep(0.05)
+            # Throttled: no new message should have been emitted
+            assert msg_debug.num_messages() == 1
+
+            # 4. Hardware sends large buffer level change (>= 5.0% delta)
+            # 1500 is ~36.6% (delta ~ 12.2% >= 5.0%)
+            fc.buffer_level = 1500
+            sock.sendto(difi.pack_flow_control(fc), client_addr)
+            for _ in range(50):
+                if msg_debug.num_messages() >= 2:
+                    break
+                time.sleep(0.01)
+
+            assert msg_debug.num_messages() == 2
+            msg1 = msg_debug.get_message(1)
+            fill_pct1 = pmt.to_double(pmt.dict_ref(msg1, pmt.intern("buffer_fill_pct"), pmt.PMT_NIL))
+            assert math.isclose(fill_pct1, (1500 / 4095.0) * 100.0, rel_tol=1e-3)
+
+            # 5. Hardware sends state flag change (e.g., overflow occurs, even with same buffer level)
+            fc.overflow = True
+            sock.sendto(difi.pack_flow_control(fc), client_addr)
+            for _ in range(50):
+                if msg_debug.num_messages() >= 3:
+                    break
+                time.sleep(0.01)
+
+            assert msg_debug.num_messages() == 3
+            msg2 = msg_debug.get_message(2)
+            assert pmt.to_bool(pmt.dict_ref(msg2, pmt.intern("overflow"), pmt.PMT_NIL)) is True
+
         finally:
             tb.stop()
             tb.wait()

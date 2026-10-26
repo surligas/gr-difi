@@ -43,6 +43,7 @@ namespace gr {
         void start_rx_thread();
         void stop_rx_thread();
         void wait_rate_control(uint32_t num_samples);
+        void check_and_publish_flow_control(const difi::flow_control& fc);
 
         difi::context<V> m_context;
         std::vector<uint8_t> m_context_buffer;
@@ -59,6 +60,14 @@ namespace gr {
         std::condition_variable m_fc_cv;
         std::atomic<bool> m_first_fc_received{false};
         difi::flow_control m_last_fc{};
+
+        std::atomic<float> m_buffer_fill_delta{1.0f};
+        bool m_fc_published{false};
+        float m_last_published_pct{0.0f};
+        bool m_last_published_overflow{false};
+        bool m_last_published_nearly_full{false};
+        bool m_last_published_nearly_empty{false};
+        bool m_last_published_underflow{false};
 
         static constexpr uint32_t s_bytes_per_sample = sizeof(sample_t);
         static constexpr int s_bit_depth_val = static_cast<int>(BitDepth);
@@ -92,7 +101,8 @@ namespace gr {
                         difi::reference_point ref_point = difi::reference_point::if_converter,
                         difi::tsi_type time_source = difi::tsi_type::posix,
                         bool rate_control = false,
-                        float max_buffer_fill_pct = 50.0f);
+                        float max_buffer_fill_pct = 50.0f,
+                        float buffer_fill_delta = 1.0f);
       ~difi_sink_cpp_impl() override;
 
       bool start() override;
@@ -227,6 +237,9 @@ namespace gr {
 
       void set_max_buffer_fill_pct(float pct) override { m_max_buffer_fill_pct.store(pct); }
       float max_buffer_fill_pct() const override { return m_max_buffer_fill_pct.load(); }
+
+      void set_buffer_fill_delta(float delta) override { m_buffer_fill_delta.store(delta); }
+      float buffer_fill_delta() const override { return m_buffer_fill_delta.load(); }
 
       float last_buffer_fill_pct() const override
       {

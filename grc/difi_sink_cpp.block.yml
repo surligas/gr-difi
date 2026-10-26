@@ -8,7 +8,7 @@ label: DIFI Sink
 category: '[DIFI]'
 templates:
   imports: import difi
-  make: difi.difi_sink_cpp_${ 'sc8' if bit_depth == '8' else 'sc16' }(${ip_addr}, ${port}, ${sample_rate}, ${data_size}, ${stream_id}, ${context_packet_send_count}, ${ '""' if mode == 'streaming' else length_tag_name }, int(${lead_time_us}), int(${context_pack_size}), int(${protocol}), float(${rf_freq}), float(${if_freq}), float(${bandwidth}), float(${rf_gain}), float(${if_gain}), float(${ref_level}), float(${if_band_offset}), int(${ref_point}), int(${time_source}), bool(${rate_control}), float(${max_buffer_fill_pct}))
+  make: difi.difi_sink_cpp_${ 'sc8' if bit_depth == '8' else 'sc16' }(${ip_addr}, ${port}, ${sample_rate}, ${data_size}, ${stream_id}, ${context_packet_send_count}, ${ '""' if mode == 'streaming' else length_tag_name }, int(${lead_time_us}), int(${context_pack_size}), int(${protocol}), float(${rf_freq}), float(${if_freq}), float(${bandwidth}), float(${rf_gain}), float(${if_gain}), float(${ref_level}), float(${if_band_offset}), int(${ref_point}), int(${time_source}), bool(${rate_control}), float(${max_buffer_fill_pct}), float(${buffer_fill_delta}))
   callbacks:
   - set_rf_freq(${rf_freq})
   - set_if_freq(${if_freq})
@@ -21,6 +21,7 @@ templates:
   - set_time_source(difi.tsi_type(${time_source}))
   - set_rate_control(${rate_control})
   - set_max_buffer_fill_pct(${max_buffer_fill_pct})
+  - set_buffer_fill_delta(${buffer_fill_delta})
 
 parameters:
 - id: bit_depth
@@ -110,6 +111,12 @@ parameters:
   dtype: float
   default: '50.0'
   hide: ${ ('none' if rate_control == 'True' else 'all') }
+- id: buffer_fill_delta
+  label: Buffer Fill Delta (%)
+  category: Time
+  dtype: float
+  default: '1.0'
+  hide: part
 
 # RF Options Tab
 - id: rf_freq
@@ -170,6 +177,12 @@ inputs:
 - label: in
   domain: stream
   dtype: ${ 'sc8' if bit_depth == '8' else 'sc16' }
+
+outputs:
+- label: status
+  domain: message
+  id: status
+  optional: true
 
 documentation: |-
      A DIFI sink block based on IEEE-ISTO Std 4900-2021 (Digital IF Interoperability Standard).

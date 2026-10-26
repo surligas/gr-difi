@@ -1034,6 +1034,38 @@ pmt::pmt_t difi::context_to_pmt(const header& header, const context_variant& ctx
     return std::visit([&](const auto& c) { return context_to_pmt(header, c); }, ctx);
 }
 
+pmt::pmt_t difi::flow_control_to_pmt(const flow_control& fc)
+{
+    pmt::pmt_t dict = pmt::make_dict();
+    dict = pmt::dict_add(
+        dict, pmt::intern("buffer_fill_pct"), pmt::from_float(fc.buffer_fill_pct()));
+    dict = pmt::dict_add(
+        dict, pmt::intern("buffer_level"), pmt::from_long(fc.buffer_level));
+    dict = pmt::dict_add(
+        dict, pmt::intern("buffer_size"), pmt::from_uint64(fc.buffer_size));
+    dict = pmt::dict_add(
+        dict, pmt::intern("overflow"), pmt::from_bool(fc.overflow));
+    dict = pmt::dict_add(
+        dict, pmt::intern("nearly_full"), pmt::from_bool(fc.nearly_full));
+    dict = pmt::dict_add(
+        dict, pmt::intern("nearly_empty"), pmt::from_bool(fc.nearly_empty));
+    dict = pmt::dict_add(
+        dict, pmt::intern("underflow"), pmt::from_bool(fc.underflow));
+    dict = pmt::dict_add(
+        dict, pmt::intern("stream_id"), pmt::from_uint64(fc.stream_id));
+    dict = pmt::dict_add(
+        dict, pmt::intern("pkt_n"), pmt::from_long(fc.pkt_n));
+    dict = pmt::dict_add(
+        dict, pmt::intern("full"), pmt::from_uint64(fc.full));
+    dict = pmt::dict_add(
+        dict, pmt::intern("frac"), pmt::from_uint64(fc.frac));
+    dict = pmt::dict_add(
+        dict, pmt::intern("sample_rate"), pmt::from_double(fc.sample_rate));
+    dict = pmt::dict_add(
+        dict, pmt::intern("timestamp_adjustment"), pmt::from_long(fc.timestamp_adjustment));
+    return dict;
+}
+
 template <>
 difi::standard_context
 difi::pmt_to_context<difi::context_version::standard>(pmt::pmt_t dict)

@@ -924,6 +924,18 @@ public:
     static pmt::pmt_t context_to_pmt(const header& header, const context_variant& ctx);
 
     /**
+     * @brief Converts a flow_control struct to a GNU Radio PMT dictionary.
+     *
+     * Contains buffer_fill_pct, buffer_level, buffer_size, overflow,
+     * nearly_full, nearly_empty, underflow, stream_id, pkt_n, full, frac,
+     * sample_rate, and timestamp_adjustment.
+     *
+     * @param fc flow_control struct
+     * @return PMT dictionary
+     */
+    static pmt::pmt_t flow_control_to_pmt(const flow_control& fc);
+
+    /**
      * @brief Decodes a context packet from a GNU Radio PMT dictionary.
      *
      * @tparam V context version

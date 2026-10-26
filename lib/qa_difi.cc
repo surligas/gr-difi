@@ -1052,4 +1052,44 @@ BOOST_AUTO_TEST_CASE(t_flow_control_parse_and_pack)
     BOOST_CHECK(!difi::parse_flow_control(packed.data(), packed.size()).has_value());
 }
 
+BOOST_AUTO_TEST_CASE(t_flow_control_to_pmt)
+{
+    difi::flow_control fc;
+    fc.pkt_n = 7;
+    fc.stream_id = 100;
+    fc.full = 1700000001U;
+    fc.frac = 500000000000ULL;
+    fc.sample_rate = 20000000.0;
+    fc.timestamp_adjustment = 1500;
+    fc.buffer_size = 2097152;
+    fc.buffer_level = 1024;
+    fc.overflow = true;
+    fc.nearly_full = true;
+    fc.nearly_empty = false;
+    fc.underflow = false;
+
+    pmt::pmt_t dict = difi::flow_control_to_pmt(fc);
+    BOOST_REQUIRE(pmt::is_dict(dict));
+
+    auto get_val = [&](const char* key) {
+        return pmt::dict_ref(dict, pmt::intern(key), pmt::get_PMT_NIL());
+    };
+
+    BOOST_CHECK_CLOSE(static_cast<float>(pmt::to_double(get_val("buffer_fill_pct"))),
+                      (1024.0f / 4095.0f) * 100.0f,
+                      1e-3);
+    BOOST_CHECK_EQUAL(pmt::to_long(get_val("buffer_level")), 1024);
+    BOOST_CHECK_EQUAL(pmt::to_uint64(get_val("buffer_size")), 2097152ULL);
+    BOOST_CHECK_EQUAL(pmt::to_bool(get_val("overflow")), true);
+    BOOST_CHECK_EQUAL(pmt::to_bool(get_val("nearly_full")), true);
+    BOOST_CHECK_EQUAL(pmt::to_bool(get_val("nearly_empty")), false);
+    BOOST_CHECK_EQUAL(pmt::to_bool(get_val("underflow")), false);
+    BOOST_CHECK_EQUAL(pmt::to_uint64(get_val("stream_id")), 100ULL);
+    BOOST_CHECK_EQUAL(pmt::to_long(get_val("pkt_n")), 7);
+    BOOST_CHECK_EQUAL(pmt::to_uint64(get_val("full")), 1700000001ULL);
+    BOOST_CHECK_EQUAL(pmt::to_uint64(get_val("frac")), 500000000000ULL);
+    BOOST_CHECK_CLOSE(pmt::to_double(get_val("sample_rate")), 20000000.0, 1e-4);
+    BOOST_CHECK_EQUAL(pmt::to_long(get_val("timestamp_adjustment")), 1500);
+}
+
 

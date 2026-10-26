@@ -38,7 +38,8 @@ difi_sink_cpp<V, Transport, BitDepth>::make(std::string ip_addr,
                                             difi::reference_point ref_point,
                                             difi::tsi_type time_source,
                                             bool rate_control,
-                                            float max_buffer_fill_pct)
+                                            float max_buffer_fill_pct,
+                                            float buffer_fill_delta)
 {
     return gnuradio::make_block_sptr<difi_sink_cpp_impl<V, Transport, BitDepth>>(
         ip_addr,
@@ -59,7 +60,8 @@ difi_sink_cpp<V, Transport, BitDepth>::make(std::string ip_addr,
         ref_point,
         time_source,
         rate_control,
-        max_buffer_fill_pct);
+        max_buffer_fill_pct,
+        buffer_fill_delta);
 }
 
 template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
@@ -83,7 +85,8 @@ difi_sink_cpp_impl<V, Transport, BitDepth>::difi_sink_cpp_impl(
     difi::reference_point ref_point,
     difi::tsi_type time_source,
     bool rate_control,
-    float max_buffer_fill_pct)
+    float max_buffer_fill_pct,
+    float buffer_fill_delta)
     : gr::sync_block("difi_sink_cpp_impl",
                      gr::io_signature::make(1, 1, sizeof(sample_t)),
                      gr::io_signature::make(0, 0, 0)),
@@ -97,8 +100,12 @@ difi_sink_cpp_impl<V, Transport, BitDepth>::difi_sink_cpp_impl(
 {
     m_rate_control.store(rate_control);
     m_max_buffer_fill_pct.store(max_buffer_fill_pct);
+    m_buffer_fill_delta.store(buffer_fill_delta);
     m_first_fc_received.store(false);
     m_rx_running.store(false);
+    m_fc_published = false;
+
+    this->message_port_register_out(pmt::intern("status"));
 
     m_transport = std::make_unique<Transport>(ip_addr, port);
 
@@ -161,6 +168,7 @@ bool difi_sink_cpp_impl<V, Transport, BitDepth>::start()
 {
     if (m_rate_control.load()) {
         m_first_fc_received.store(false);
+        m_fc_published = false;
         start_rx_thread();
     }
     return gr::sync_block::start();
@@ -202,17 +210,71 @@ void difi_sink_cpp_impl<V, Transport, BitDepth>::rx_loop()
     uint8_t rx_buf[1500];
     while (m_rx_running.load()) {
         ssize_t ret = m_transport->recv(rx_buf, sizeof(rx_buf));
-        if (ret >= static_cast<ssize_t>(difi::FLOW_CONTROL_SIZE)) {
-            auto fc_opt = difi::parse_flow_control(rx_buf, static_cast<size_t>(ret));
-            if (fc_opt) {
-                {
-                    std::lock_guard<std::mutex> lock(m_fc_mutex);
-                    m_last_fc = *fc_opt;
-                    m_first_fc_received.store(true);
+        if (ret >= static_cast<ssize_t>(difi::HEADER_SIZE)) {
+            uint32_t w0 = difi::unpack_u32(rx_buf);
+            uint8_t type_val = static_cast<uint8_t>((w0 >> 28) & 0x0f);
+            if (type_val == static_cast<uint8_t>(difi::packet_type::command)) {
+                if (ret >= static_cast<ssize_t>(difi::FLOW_CONTROL_SIZE)) {
+                    auto fc_opt = difi::parse_flow_control(rx_buf, static_cast<size_t>(ret));
+                    if (fc_opt) {
+                        {
+                            std::lock_guard<std::mutex> lock(m_fc_mutex);
+                            m_last_fc = *fc_opt;
+                            m_first_fc_received.store(true);
+                        }
+                        m_fc_cv.notify_all();
+                        check_and_publish_flow_control(*fc_opt);
+                    }
                 }
-                m_fc_cv.notify_all();
+            } else if (type_val == static_cast<uint8_t>(difi::packet_type::context)) {
+                if (ret >= static_cast<ssize_t>(difi::ALT_CONTEXT_SIZE)) {
+                    try {
+                        auto ctx_var = difi::parse_context(rx_buf, static_cast<size_t>(ret));
+                        auto h = difi::parse_header(rx_buf, static_cast<size_t>(ret));
+                        pmt::pmt_t pmt_ctx = difi::context_to_pmt(h, ctx_var);
+                        this->message_port_pub(pmt::intern("status"), pmt_ctx);
+                    } catch (const std::exception& e) {
+                        GR_LOG_WARN(this->d_logger,
+                                    "Failed to parse received context packet: " + std::string(e.what()));
+                    }
+                }
             }
         }
+    }
+}
+
+template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+requires valid_bit_depth<BitDepth>
+void difi_sink_cpp_impl<V, Transport, BitDepth>::check_and_publish_flow_control(
+    const difi::flow_control& fc)
+{
+    bool should_publish = false;
+    float delta = m_buffer_fill_delta.load();
+    float pct = fc.buffer_fill_pct();
+
+    if (delta <= 0.0f) {
+        should_publish = true;
+    } else if (!m_fc_published) {
+        should_publish = true;
+    } else if (fc.overflow != m_last_published_overflow ||
+               fc.nearly_full != m_last_published_nearly_full ||
+               fc.nearly_empty != m_last_published_nearly_empty ||
+               fc.underflow != m_last_published_underflow) {
+        should_publish = true;
+    } else if (std::abs(pct - m_last_published_pct) >= delta) {
+        should_publish = true;
+    }
+
+    if (should_publish) {
+        m_fc_published = true;
+        m_last_published_pct = pct;
+        m_last_published_overflow = fc.overflow;
+        m_last_published_nearly_full = fc.nearly_full;
+        m_last_published_nearly_empty = fc.nearly_empty;
+        m_last_published_underflow = fc.underflow;
+
+        pmt::pmt_t msg = difi::flow_control_to_pmt(fc);
+        this->message_port_pub(pmt::intern("status"), msg);
     }
 }
 
