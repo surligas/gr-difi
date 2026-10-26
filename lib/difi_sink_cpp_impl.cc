@@ -315,10 +315,12 @@ void difi_sink_cpp_impl<V, Transport, BitDepth>::wait_rate_control(uint32_t num_
 
     // Rate limiting pacing
     std::unique_lock<std::mutex> lock(m_fc_mutex);
-    if (!m_last_fc.nearly_empty && m_last_fc.buffer_fill_pct() >= m_max_buffer_fill_pct.load()) {
-        uint64_t dur_ns = (d_samp_rate > 0.0)
-            ? static_cast<uint64_t>(static_cast<double>(num_samples) * 1000000000.0 / d_samp_rate)
-            : 1000000ULL;
+    if (!m_last_fc.nearly_empty &&
+        m_last_fc.buffer_fill_pct() >= m_max_buffer_fill_pct.load()) {
+        /* Be a bit more conservative and sleep half the calculated duration */
+        uint64_t dur_ns = static_cast<uint64_t>(static_cast<double>(num_samples) *
+                                                1000000000.0 / d_samp_rate) /
+                          2;
         if (dur_ns == 0) {
             dur_ns = 1;
         }
@@ -404,8 +406,8 @@ int difi_sink_cpp_impl<V, Transport, BitDepth>::work(
         d_burst_samples_remaining = pmt::to_uint64(next_tag->value);
         GR_LOG_DEBUG(this->d_logger,
                      "Starting burst at offset " + std::to_string(next_tag->offset) +
-                     " with " + std::to_string(d_burst_samples_remaining) +
-                     " samples remaining");
+                         " with " + std::to_string(d_burst_samples_remaining) +
+                         " samples remaining");
         reanchor_timestamp();
     } else {
         // Check for overlapping burst tags
@@ -475,8 +477,9 @@ int difi_sink_cpp_impl<V, Transport, BitDepth>::work(
                                s_bit_depth_val);
             auto to_send = pack_data(tail_payload_bytes);
             GR_LOG_DEBUG(this->d_logger,
-                         "Sending final burst packet with " + std::to_string(tail_samples) +
-                         " samples (" + std::to_string(tail_payload_bytes) + " bytes)");
+                         "Sending final burst packet with " +
+                             std::to_string(tail_samples) + " samples (" +
+                             std::to_string(tail_payload_bytes) + " bytes)");
             m_transport->send(to_send.data(), to_send.size());
             d_pkt_n = (d_pkt_n + 1) % difi::VITA_PKT_MOD;
             d_samples_since_last_reference += tail_samples;
@@ -486,10 +489,9 @@ int difi_sink_cpp_impl<V, Transport, BitDepth>::work(
         }
     }
     GR_LOG_DEBUG(this->d_logger,
-                 "Consumed " + std::to_string(samples_consumed) +
-                 " samples, " + std::to_string(d_burst_samples_remaining) +
-                 " remaining in burst, " + std::to_string(available_for_burst) +
-                 " available");
+                 "Consumed " + std::to_string(samples_consumed) + " samples, " +
+                     std::to_string(d_burst_samples_remaining) + " remaining in burst, " +
+                     std::to_string(available_for_burst) + " available");
     return samples_consumed;
 }
 
