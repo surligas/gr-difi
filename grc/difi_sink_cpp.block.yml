@@ -58,7 +58,7 @@ parameters:
   hide: part
 - id: sample_rate
   label: Sample Rate
-  dtype: int
+  dtype: real
   default: samp_rate
 - id: data_size
   label: Samples Per Packet

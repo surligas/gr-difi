@@ -22,7 +22,7 @@ requires valid_bit_depth<BitDepth>
 difi_sink_base::sptr
 difi_sink_cpp<V, Transport, BitDepth>::make(std::string ip_addr,
                                             uint16_t port,
-                                            uint64_t samp_rate,
+                                            double samp_rate,
                                             uint32_t samples_per_packet,
                                             int stream_number,
                                             int context_interval,
@@ -69,7 +69,7 @@ requires valid_bit_depth<BitDepth>
 difi_sink_cpp_impl<V, Transport, BitDepth>::difi_sink_cpp_impl(
     std::string ip_addr,
     uint16_t port,
-    uint64_t samp_rate,
+    double samp_rate,
     uint32_t samples_per_packet,
     int stream_number,
     int context_interval,
@@ -91,7 +91,7 @@ difi_sink_cpp_impl<V, Transport, BitDepth>::difi_sink_cpp_impl(
                      gr::io_signature::make(1, 1, sizeof(sample_t)),
                      gr::io_signature::make(0, 0, 0)),
       d_stream_number(int(stream_number)),
-      d_full_samp(samp_rate),
+      d_samp_rate(samp_rate),
       d_pkt_n(0),
       d_samples_since_last_reference(0),
       d_packet_count(0),
@@ -310,8 +310,8 @@ void difi_sink_cpp_impl<V, Transport, BitDepth>::wait_rate_control(uint32_t num_
     // Rate limiting pacing
     std::unique_lock<std::mutex> lock(m_fc_mutex);
     if (!m_last_fc.nearly_empty && m_last_fc.buffer_fill_pct() >= m_max_buffer_fill_pct.load()) {
-        uint64_t dur_ns = (d_full_samp > 0)
-            ? (static_cast<uint64_t>(num_samples) * 1000000000ULL / d_full_samp)
+        uint64_t dur_ns = (d_samp_rate > 0.0)
+            ? static_cast<uint64_t>(static_cast<double>(num_samples) * 1000000000.0 / d_samp_rate)
             : 1000000ULL;
         if (dur_ns == 0) {
             dur_ns = 1;
@@ -537,7 +537,7 @@ requires valid_bit_depth<BitDepth>
 std::pair<uint32_t, uint64_t> difi_sink_cpp_impl<V, Transport, BitDepth>::add_frac_full()
 {
     return difi::advance_timestamp(
-        d_full, d_frac, d_samples_since_last_reference, d_full_samp);
+        d_full, d_frac, d_samples_since_last_reference, d_samp_rate);
 }
 
 template class difi_sink_cpp<difi::context_version::standard,

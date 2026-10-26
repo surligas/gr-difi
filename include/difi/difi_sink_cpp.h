@@ -139,7 +139,7 @@ namespace gr {
       static difi_sink_base::sptr make(
           std::string ip_addr,
           uint16_t port,
-          uint64_t samp_rate,
+          double samp_rate,
           uint32_t samples_per_packet,
           int stream_number = 0,
           int context_interval = 100,

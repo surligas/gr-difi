@@ -73,7 +73,7 @@ namespace gr {
         static constexpr int s_bit_depth_val = static_cast<int>(BitDepth);
 
         int d_stream_number;
-        uint32_t d_full_samp;
+        double d_samp_rate;
         std::string m_length_tag_name;
         pmt::pmt_t m_length_tag_key;
         uint64_t d_burst_samples_remaining;
@@ -91,7 +91,7 @@ namespace gr {
         uint32_t d_samples_per_packet;
 
      public:
-      difi_sink_cpp_impl(std::string ip_addr, uint16_t port, uint64_t samp_rate,
+      difi_sink_cpp_impl(std::string ip_addr, uint16_t port, double samp_rate,
                         uint32_t samples_per_packet, int stream_number = 0,
                         int context_interval = 100,
                         const std::string& length_tag_name = "", uint32_t lead_time_us = 10000,
@@ -144,7 +144,7 @@ namespace gr {
 
       void set_bandwidth(double bw) override
       {
-          m_context.bandwidth = (bw > 0.0) ? bw : static_cast<double>(d_full_samp);
+          m_context.bandwidth = (bw > 0.0) ? bw : d_samp_rate;
       }
       double bandwidth() const override { return m_context.bandwidth; }
 

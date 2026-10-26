@@ -212,7 +212,7 @@ void bind_difi_sink_cpp(py::module& m)
     auto make_dispatch = [](
         std::string ip_addr,
         uint16_t port,
-        uint64_t samp_rate,
+        double samp_rate,
         uint32_t samples_per_packet,
         int stream_number,
         int context_interval,
@@ -286,7 +286,7 @@ void bind_difi_sink_cpp(py::module& m)
     auto make_sc8 = [make_dispatch](
         std::string ip_addr,
         uint16_t port,
-        uint64_t samp_rate,
+        double samp_rate,
         uint32_t samples_per_packet,
         int stream_number,
         int context_interval,
@@ -320,7 +320,7 @@ void bind_difi_sink_cpp(py::module& m)
     auto make_sc16 = [make_dispatch](
         std::string ip_addr,
         uint16_t port,
-        uint64_t samp_rate,
+        double samp_rate,
         uint32_t samples_per_packet,
         int stream_number,
         int context_interval,
