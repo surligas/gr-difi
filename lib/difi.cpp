@@ -557,9 +557,12 @@ void difi::pack_flow_control(const flow_control& fc, std::span<uint8_t> out)
 
     uint64_t cid = fc.class_id;
     if (cid == 0) {
+        const bool is_sample_count = (fc.tsf == tsf_type::sample_count);
         cid = make_class_id(oui::difi,
-                            packet_class::real_time_flow_control,
-                            information_class::sample_count_data_plane);
+                            is_sample_count ? packet_class::sample_count_flow_control
+                                            : packet_class::real_time_flow_control,
+                            is_sample_count ? information_class::sample_count_data_plane
+                                            : information_class::bit_padding_data_plane);
     }
     pack_u64(&p[8], cid);
     pack_u32(&p[16], fc.message_id);

@@ -1062,6 +1062,7 @@ class qa_testcpp(gr_unittest.TestCase):
         assert parsed_fc.type == difi.packet_type.command
 
         assert sink_rf.rate_control() is False
+        assert sink_rf.context().class_id == 0x006a621e00000001
         assert sink_rf.max_buffer_fill_pct() == 50.0
         assert sink_rf.buffer_fill_delta() == 1.0
         sink_rf.set_buffer_fill_delta(2.5)
@@ -1069,10 +1070,12 @@ class qa_testcpp(gr_unittest.TestCase):
         sink_rf.set_buffer_fill_delta(1.0)
         sink_rf.set_rate_control(True)
         assert sink_rf.rate_control() is True
+        assert sink_rf.context().class_id == 0x006a621e00030001
         sink_rf.set_max_buffer_fill_pct(75.0)
         assert sink_rf.max_buffer_fill_pct() == 75.0
         sink_rf.set_rate_control(False)
         assert sink_rf.rate_control() is False
+        assert sink_rf.context().class_id == 0x006a621e00000001
 
         # Test flow_control_to_pmt
         fc_pmt = difi.flow_control_to_pmt(fc)
@@ -1107,6 +1110,7 @@ class qa_testcpp(gr_unittest.TestCase):
             # 1. Handshake: Sink transmits initial context packet to announce itself
             ctx_pkt, client_addr = sock.recvfrom(2048)
             assert len(ctx_pkt) in (72, 108)
+            assert int.from_bytes(ctx_pkt[8:16], 'big') == 0x006a621e00030001
 
             # 2. Hardware replies with flow control packet: buffer level 100, nearly_empty
             fc = difi.flow_control()
@@ -1116,9 +1120,16 @@ class qa_testcpp(gr_unittest.TestCase):
             fc.nearly_empty = True
             sock.sendto(difi.pack_flow_control(fc), client_addr)
 
-            # 3. Sink unblocks and transmits data packet
-            data_pkt, _ = sock.recvfrom(2048)
+            # 3. Sink unblocks and transmits context (packet_count == 0) then data packet
+            pkt2, _ = sock.recvfrom(2048)
+            if len(pkt2) in (72, 108) and (pkt2[0] >> 4) == 4:
+                assert int.from_bytes(pkt2[8:16], 'big') == 0x006a621e00030001
+                data_pkt, _ = sock.recvfrom(2048)
+            else:
+                data_pkt = pkt2
             assert len(data_pkt) > 28
+            assert (data_pkt[0] >> 4) == 1
+            assert int.from_bytes(data_pkt[8:16], 'big') == 0x006a621e00030000
 
             # Verify sink state reflected the flow control
             time.sleep(0.05)

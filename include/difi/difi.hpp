@@ -126,13 +126,13 @@ public:
     /**
      * @brief Information class codes for DIFI / VITA 49 (Word 4, bits 31-16 of Class ID).
      *
-     * According to IEEE-ISTO 4900-2021 Section 4.2.
+     * According to IEEE-ISTO 4900-2021 Section 3 and Section 4.2.
      */
     enum class information_class : uint16_t {
-        basic_data_plane = 0x0000,        ///< Basic Data Plane
+        basic_data_plane = 0x0000,        ///< Basic Data Plane (no flow control)
         version_flow = 0x0001,            ///< Version Flow
-        sample_count_data_plane = 0x0002, ///< Sample Count Data Plane
-        bit_padding_data_plane = 0x0003   ///< Bit Padding Permitted Data Plane
+        sample_count_data_plane = 0x0002, ///< Data Plane plus Flow Control (Sample Count TSF)
+        bit_padding_data_plane = 0x0003   ///< Data Plane plus Flow Control, Real Time TSF (bit padding permitted)
     };
 
     /**

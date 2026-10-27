@@ -1028,6 +1028,7 @@ BOOST_AUTO_TEST_CASE(t_flow_control_parse_and_pack)
     auto parsed_tx = difi::parse_flow_control(packed.data(), packed.size());
     BOOST_REQUIRE(parsed_tx.has_value());
     BOOST_CHECK_EQUAL(static_cast<int>(parsed_tx->type), static_cast<int>(difi::packet_type::command));
+    BOOST_CHECK_EQUAL(parsed_tx->class_id, 0x006a621e00030006ULL);
     BOOST_CHECK(parsed_tx->tsi == difi::tsi_type::posix);
     BOOST_CHECK(parsed_tx->tsf == difi::tsf_type::picoseconds);
     BOOST_CHECK_EQUAL(parsed_tx->pkt_n, 5);

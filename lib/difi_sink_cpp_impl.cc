@@ -150,9 +150,25 @@ difi_sink_cpp_impl<V, Transport, BitDepth>::difi_sink_cpp_impl(
     });
     m_context_buffer.resize(m_context.packet_size);
 
-    m_class_id = (m_context.class_id & ~0xffffULL) |
-                 static_cast<uint16_t>(difi::packet_class::standard_data);
+    update_class_id(rate_control);
     m_data_buffer.resize(difi::DIFI_HEADER_SIZE + d_data_len);
+}
+
+template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+requires valid_bit_depth<BitDepth>
+void difi_sink_cpp_impl<V, Transport, BitDepth>::update_class_id(
+    bool rate_control_enabled)
+{
+    const auto info_cls = rate_control_enabled
+                              ? difi::information_class::bit_padding_data_plane
+                              : difi::information_class::basic_data_plane;
+    constexpr auto id_oui =
+        (V == difi::context_version::alternative) ? difi::oui::vita : difi::oui::difi;
+
+    m_context.class_id =
+        difi::make_class_id(id_oui, difi::packet_class::standard_context, info_cls);
+    m_class_id =
+        difi::make_class_id(id_oui, difi::packet_class::standard_data, info_cls);
 }
 
 template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>

@@ -45,6 +45,7 @@ namespace gr {
         void wait_rate_control(uint32_t num_samples);
         void update_estimated_fill(std::chrono::steady_clock::time_point now);
         void check_and_publish_flow_control(const difi::flow_control& fc);
+        void update_class_id(bool rate_control_enabled);
 
         difi::context<V> m_context;
         std::vector<uint8_t> m_context_buffer;
@@ -228,6 +229,7 @@ namespace gr {
 
       void set_rate_control(bool enabled) override
       {
+          update_class_id(enabled);
           if (m_rate_control.load() == enabled) return;
           m_rate_control.store(enabled);
           if (enabled) {
