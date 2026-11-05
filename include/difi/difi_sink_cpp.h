@@ -123,17 +123,21 @@ namespace gr {
      * @tparam V context version (standard or alternative)
      * @tparam Transport transport class (udp_client or tcp_client)
      * @tparam BitDepth bit depth (bits_8 or bits_16)
+     * @tparam ByteOrder byte order of the I/Q samples in the payload (network,
+     *         big or little). It has no effect for bits_8. Header and context
+     *         words are always big-endian.
      */
     template <
         difi::context_version V = difi::context_version::standard,
         sink_transport Transport = udp_client,
-        difi::bit_depth BitDepth = difi::bit_depth::bits_16
+        difi::bit_depth BitDepth = difi::bit_depth::bits_16,
+        difi::byte_order ByteOrder = difi::byte_order::network
     >
     requires valid_bit_depth<BitDepth>
     class DIFI_API difi_sink_cpp : public difi_sink_base
     {
      public:
-      typedef std::shared_ptr<difi_sink_cpp<V, Transport, BitDepth>> sptr;
+      typedef std::shared_ptr<difi_sink_cpp<V, Transport, BitDepth, ByteOrder>> sptr;
       using sample_t = sink_sample_type_t<BitDepth>;
 
       static difi_sink_base::sptr make(

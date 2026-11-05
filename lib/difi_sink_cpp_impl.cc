@@ -17,56 +17,62 @@
 namespace gr {
 namespace difi {
 
-template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+template <difi::context_version V,
+          sink_transport Transport,
+          difi::bit_depth BitDepth,
+          difi::byte_order ByteOrder>
 requires valid_bit_depth<BitDepth>
 difi_sink_base::sptr
-difi_sink_cpp<V, Transport, BitDepth>::make(std::string ip_addr,
-                                            uint16_t port,
-                                            double samp_rate,
-                                            uint32_t samples_per_packet,
-                                            int stream_number,
-                                            int context_interval,
-                                            const std::string& length_tag_name,
-                                            uint32_t lead_time_us,
-                                            double rf_freq,
-                                            double if_freq,
-                                            double bandwidth,
-                                            float rf_gain,
-                                            float if_gain,
-                                            float ref_level,
-                                            double if_band_offset,
-                                            difi::reference_point ref_point,
-                                            difi::tsi_type time_source,
-                                            bool rate_control,
-                                            float max_buffer_fill_pct,
-                                            float buffer_fill_delta)
+difi_sink_cpp<V, Transport, BitDepth, ByteOrder>::make(std::string ip_addr,
+                                                       uint16_t port,
+                                                       double samp_rate,
+                                                       uint32_t samples_per_packet,
+                                                       int stream_number,
+                                                       int context_interval,
+                                                       const std::string& length_tag_name,
+                                                       uint32_t lead_time_us,
+                                                       double rf_freq,
+                                                       double if_freq,
+                                                       double bandwidth,
+                                                       float rf_gain,
+                                                       float if_gain,
+                                                       float ref_level,
+                                                       double if_band_offset,
+                                                       difi::reference_point ref_point,
+                                                       difi::tsi_type time_source,
+                                                       bool rate_control,
+                                                       float max_buffer_fill_pct,
+                                                       float buffer_fill_delta)
 {
-    return gnuradio::make_block_sptr<difi_sink_cpp_impl<V, Transport, BitDepth>>(
-        ip_addr,
-        port,
-        samp_rate,
-        samples_per_packet,
-        stream_number,
-        context_interval,
-        length_tag_name,
-        lead_time_us,
-        rf_freq,
-        if_freq,
-        bandwidth,
-        rf_gain,
-        if_gain,
-        ref_level,
-        if_band_offset,
-        ref_point,
-        time_source,
-        rate_control,
-        max_buffer_fill_pct,
-        buffer_fill_delta);
+    return gnuradio::make_block_sptr<
+        difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>>(ip_addr,
+                                                               port,
+                                                               samp_rate,
+                                                               samples_per_packet,
+                                                               stream_number,
+                                                               context_interval,
+                                                               length_tag_name,
+                                                               lead_time_us,
+                                                               rf_freq,
+                                                               if_freq,
+                                                               bandwidth,
+                                                               rf_gain,
+                                                               if_gain,
+                                                               ref_level,
+                                                               if_band_offset,
+                                                               ref_point,
+                                                               time_source,
+                                                               rate_control,
+                                                               max_buffer_fill_pct,
+                                                               buffer_fill_delta);
 }
 
-template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+template <difi::context_version V,
+          sink_transport Transport,
+          difi::bit_depth BitDepth,
+          difi::byte_order ByteOrder>
 requires valid_bit_depth<BitDepth>
-difi_sink_cpp_impl<V, Transport, BitDepth>::difi_sink_cpp_impl(
+difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::difi_sink_cpp_impl(
     std::string ip_addr,
     uint16_t port,
     double samp_rate,
@@ -154,9 +160,12 @@ difi_sink_cpp_impl<V, Transport, BitDepth>::difi_sink_cpp_impl(
     m_data_buffer.resize(difi::DIFI_HEADER_SIZE + d_data_len);
 }
 
-template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+template <difi::context_version V,
+          sink_transport Transport,
+          difi::bit_depth BitDepth,
+          difi::byte_order ByteOrder>
 requires valid_bit_depth<BitDepth>
-void difi_sink_cpp_impl<V, Transport, BitDepth>::update_class_id(
+void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::update_class_id(
     bool rate_control_enabled)
 {
     const auto info_cls = rate_control_enabled
@@ -171,16 +180,22 @@ void difi_sink_cpp_impl<V, Transport, BitDepth>::update_class_id(
         difi::make_class_id(id_oui, difi::packet_class::standard_data, info_cls);
 }
 
-template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+template <difi::context_version V,
+          sink_transport Transport,
+          difi::bit_depth BitDepth,
+          difi::byte_order ByteOrder>
 requires valid_bit_depth<BitDepth>
-difi_sink_cpp_impl<V, Transport, BitDepth>::~difi_sink_cpp_impl()
+difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::~difi_sink_cpp_impl()
 {
     stop_rx_thread();
 }
 
-template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+template <difi::context_version V,
+          sink_transport Transport,
+          difi::bit_depth BitDepth,
+          difi::byte_order ByteOrder>
 requires valid_bit_depth<BitDepth>
-bool difi_sink_cpp_impl<V, Transport, BitDepth>::start()
+bool difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::start()
 {
     if (m_rate_control.load()) {
         {
@@ -195,26 +210,35 @@ bool difi_sink_cpp_impl<V, Transport, BitDepth>::start()
     return gr::sync_block::start();
 }
 
-template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+template <difi::context_version V,
+          sink_transport Transport,
+          difi::bit_depth BitDepth,
+          difi::byte_order ByteOrder>
 requires valid_bit_depth<BitDepth>
-bool difi_sink_cpp_impl<V, Transport, BitDepth>::stop()
+bool difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::stop()
 {
     stop_rx_thread();
     return gr::sync_block::stop();
 }
 
-template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+template <difi::context_version V,
+          sink_transport Transport,
+          difi::bit_depth BitDepth,
+          difi::byte_order ByteOrder>
 requires valid_bit_depth<BitDepth>
-void difi_sink_cpp_impl<V, Transport, BitDepth>::start_rx_thread()
+void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::start_rx_thread()
 {
     if (!m_rx_running.exchange(true)) {
         m_rx_thread = std::thread(&difi_sink_cpp_impl::rx_loop, this);
     }
 }
 
-template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+template <difi::context_version V,
+          sink_transport Transport,
+          difi::bit_depth BitDepth,
+          difi::byte_order ByteOrder>
 requires valid_bit_depth<BitDepth>
-void difi_sink_cpp_impl<V, Transport, BitDepth>::stop_rx_thread()
+void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::stop_rx_thread()
 {
     if (m_rx_running.exchange(false)) {
         m_fc_cv.notify_all();
@@ -224,9 +248,12 @@ void difi_sink_cpp_impl<V, Transport, BitDepth>::stop_rx_thread()
     }
 }
 
-template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+template <difi::context_version V,
+          sink_transport Transport,
+          difi::bit_depth BitDepth,
+          difi::byte_order ByteOrder>
 requires valid_bit_depth<BitDepth>
-void difi_sink_cpp_impl<V, Transport, BitDepth>::rx_loop()
+void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::rx_loop()
 {
     uint8_t rx_buf[1500];
     while (m_rx_running.load()) {
@@ -291,10 +318,13 @@ void difi_sink_cpp_impl<V, Transport, BitDepth>::rx_loop()
     }
 }
 
-template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+template <difi::context_version V,
+          sink_transport Transport,
+          difi::bit_depth BitDepth,
+          difi::byte_order ByteOrder>
 requires valid_bit_depth<BitDepth>
-void difi_sink_cpp_impl<V, Transport, BitDepth>::check_and_publish_flow_control(
-    const difi::flow_control& fc)
+void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::
+    check_and_publish_flow_control(const difi::flow_control& fc)
 {
     bool should_publish = false;
     float delta = m_buffer_fill_delta.load();
@@ -326,9 +356,12 @@ void difi_sink_cpp_impl<V, Transport, BitDepth>::check_and_publish_flow_control(
     }
 }
 
-template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+template <difi::context_version V,
+          sink_transport Transport,
+          difi::bit_depth BitDepth,
+          difi::byte_order ByteOrder>
 requires valid_bit_depth<BitDepth>
-void difi_sink_cpp_impl<V, Transport, BitDepth>::update_estimated_fill(
+void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::update_estimated_fill(
     std::chrono::steady_clock::time_point now)
 {
     if (m_last_update_time.time_since_epoch().count() > 0) {
@@ -346,9 +379,13 @@ void difi_sink_cpp_impl<V, Transport, BitDepth>::update_estimated_fill(
     m_last_update_time = now;
 }
 
-template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+template <difi::context_version V,
+          sink_transport Transport,
+          difi::bit_depth BitDepth,
+          difi::byte_order ByteOrder>
 requires valid_bit_depth<BitDepth>
-void difi_sink_cpp_impl<V, Transport, BitDepth>::wait_rate_control(uint32_t num_samples)
+void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::wait_rate_control(
+    uint32_t num_samples)
 {
     if (!m_rate_control.load()) {
         return;
@@ -416,9 +453,12 @@ void difi_sink_cpp_impl<V, Transport, BitDepth>::wait_rate_control(uint32_t num_
     }
 }
 
-template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+template <difi::context_version V,
+          sink_transport Transport,
+          difi::bit_depth BitDepth,
+          difi::byte_order ByteOrder>
 requires valid_bit_depth<BitDepth>
-void difi_sink_cpp_impl<V, Transport, BitDepth>::reanchor_timestamp()
+void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::reanchor_timestamp()
 {
     auto [full, frac] = difi::system_timestamp(d_lead_time_us, m_time_source);
     d_full = full;
@@ -426,9 +466,12 @@ void difi_sink_cpp_impl<V, Transport, BitDepth>::reanchor_timestamp()
     d_samples_since_last_reference = 0;
 }
 
-template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+template <difi::context_version V,
+          sink_transport Transport,
+          difi::bit_depth BitDepth,
+          difi::byte_order ByteOrder>
 requires valid_bit_depth<BitDepth>
-int difi_sink_cpp_impl<V, Transport, BitDepth>::work(
+int difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::work(
     int noutput_items,
     gr_vector_const_void_star& input_items,
     gr_vector_void_star& output_items)
@@ -447,10 +490,10 @@ int difi_sink_cpp_impl<V, Transport, BitDepth>::work(
             if (d_packet_count % d_contex_packet_interval == 0) {
                 send_context();
             }
-            difi::pack_samples(in + p * d_samples_per_packet,
-                               d_samples_per_packet,
-                               m_data_buffer.data() + difi::DIFI_HEADER_SIZE,
-                               s_bit_depth_val);
+            difi::pack_samples<ByteOrder>(in + p * d_samples_per_packet,
+                                          d_samples_per_packet,
+                                          m_data_buffer.data() + difi::DIFI_HEADER_SIZE,
+                                          s_bit_depth_val);
             auto to_send = pack_data(d_data_len);
             m_transport->send(to_send.data(), to_send.size());
             d_pkt_n = (d_pkt_n + 1) % difi::VITA_PKT_MOD;
@@ -527,10 +570,10 @@ int difi_sink_cpp_impl<V, Transport, BitDepth>::work(
         if (d_packet_count % d_contex_packet_interval == 0) {
             send_context();
         }
-        difi::pack_samples(in + p * d_samples_per_packet,
-                           d_samples_per_packet,
-                           m_data_buffer.data() + difi::DIFI_HEADER_SIZE,
-                           s_bit_depth_val);
+        difi::pack_samples<ByteOrder>(in + p * d_samples_per_packet,
+                                      d_samples_per_packet,
+                                      m_data_buffer.data() + difi::DIFI_HEADER_SIZE,
+                                      s_bit_depth_val);
         auto to_send = pack_data(d_data_len);
         m_transport->send(to_send.data(), to_send.size());
         d_pkt_n = (d_pkt_n + 1) % difi::VITA_PKT_MOD;
@@ -555,10 +598,10 @@ int difi_sink_cpp_impl<V, Transport, BitDepth>::work(
             if (d_packet_count % d_contex_packet_interval == 0) {
                 send_context();
             }
-            difi::pack_samples(in + samples_consumed,
-                               tail_samples,
-                               m_data_buffer.data() + difi::DIFI_HEADER_SIZE,
-                               s_bit_depth_val);
+            difi::pack_samples<ByteOrder>(in + samples_consumed,
+                                          tail_samples,
+                                          m_data_buffer.data() + difi::DIFI_HEADER_SIZE,
+                                          s_bit_depth_val);
             auto to_send = pack_data(tail_payload_bytes);
             GR_LOG_DEBUG(this->d_logger,
                          "Sending final burst packet with " +
@@ -579,10 +622,13 @@ int difi_sink_cpp_impl<V, Transport, BitDepth>::work(
     return samples_consumed;
 }
 
-template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+template <difi::context_version V,
+          sink_transport Transport,
+          difi::bit_depth BitDepth,
+          difi::byte_order ByteOrder>
 requires valid_bit_depth<BitDepth>
 std::span<const uint8_t>
-difi_sink_cpp_impl<V, Transport, BitDepth>::pack_data(size_t payload_bytes)
+difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::pack_data(size_t payload_bytes)
 {
     // VITA 49 requires packet sizes to be a multiple of 32-bit (4-byte) words.
     size_t aligned_payload_bytes = (payload_bytes + 3) & ~size_t(3);
@@ -606,9 +652,12 @@ difi_sink_cpp_impl<V, Transport, BitDepth>::pack_data(size_t payload_bytes)
                                     difi::DIFI_HEADER_SIZE + aligned_payload_bytes);
 }
 
-template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+template <difi::context_version V,
+          sink_transport Transport,
+          difi::bit_depth BitDepth,
+          difi::byte_order ByteOrder>
 requires valid_bit_depth<BitDepth>
-void difi_sink_cpp_impl<V, Transport, BitDepth>::send_context()
+void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::send_context()
 {
     if constexpr (V == difi::context_version::standard) {
         auto [full, frac] = add_frac_full();
@@ -624,65 +673,55 @@ void difi_sink_cpp_impl<V, Transport, BitDepth>::send_context()
     d_context_packet_count = (d_context_packet_count + 1) % difi::VITA_PKT_MOD;
 }
 
-template <difi::context_version V, sink_transport Transport, difi::bit_depth BitDepth>
+template <difi::context_version V,
+          sink_transport Transport,
+          difi::bit_depth BitDepth,
+          difi::byte_order ByteOrder>
 requires valid_bit_depth<BitDepth>
-std::pair<uint32_t, uint64_t> difi_sink_cpp_impl<V, Transport, BitDepth>::add_frac_full()
+std::pair<uint32_t, uint64_t>
+difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::add_frac_full()
 {
     return difi::advance_timestamp(
         d_full, d_frac, d_samples_since_last_reference, d_samp_rate);
 }
 
-template class difi_sink_cpp<difi::context_version::standard,
-                             udp_client,
-                             difi::bit_depth::bits_16>;
-template class difi_sink_cpp<difi::context_version::standard,
-                             udp_client,
-                             difi::bit_depth::bits_8>;
-template class difi_sink_cpp<difi::context_version::standard,
-                             tcp_client,
-                             difi::bit_depth::bits_16>;
-template class difi_sink_cpp<difi::context_version::standard,
-                             tcp_client,
-                             difi::bit_depth::bits_8>;
+/*
+ * Instantiates the block and its implementation for one context version,
+ * transport and bit depth, once for each byte order. byte_order::network is
+ * the same value as byte_order::big, so it needs no instantiation of its own.
+ */
+#define DIFI_SINK_INSTANTIATE(V, TRANSPORT, DEPTH)                                 \
+    template class difi_sink_cpp<V, TRANSPORT, DEPTH, difi::byte_order::big>;      \
+    template class difi_sink_cpp<V, TRANSPORT, DEPTH, difi::byte_order::little>;   \
+    template class difi_sink_cpp_impl<V, TRANSPORT, DEPTH, difi::byte_order::big>; \
+    template class difi_sink_cpp_impl<V, TRANSPORT, DEPTH, difi::byte_order::little>;
 
-template class difi_sink_cpp<difi::context_version::alternative,
-                             udp_client,
-                             difi::bit_depth::bits_16>;
-template class difi_sink_cpp<difi::context_version::alternative,
-                             udp_client,
-                             difi::bit_depth::bits_8>;
-template class difi_sink_cpp<difi::context_version::alternative,
-                             tcp_client,
-                             difi::bit_depth::bits_16>;
-template class difi_sink_cpp<difi::context_version::alternative,
-                             tcp_client,
-                             difi::bit_depth::bits_8>;
+DIFI_SINK_INSTANTIATE(difi::context_version::standard,
+                      udp_client,
+                      difi::bit_depth::bits_16)
+DIFI_SINK_INSTANTIATE(difi::context_version::standard,
+                      udp_client,
+                      difi::bit_depth::bits_8)
+DIFI_SINK_INSTANTIATE(difi::context_version::standard,
+                      tcp_client,
+                      difi::bit_depth::bits_16)
+DIFI_SINK_INSTANTIATE(difi::context_version::standard,
+                      tcp_client,
+                      difi::bit_depth::bits_8)
+DIFI_SINK_INSTANTIATE(difi::context_version::alternative,
+                      udp_client,
+                      difi::bit_depth::bits_16)
+DIFI_SINK_INSTANTIATE(difi::context_version::alternative,
+                      udp_client,
+                      difi::bit_depth::bits_8)
+DIFI_SINK_INSTANTIATE(difi::context_version::alternative,
+                      tcp_client,
+                      difi::bit_depth::bits_16)
+DIFI_SINK_INSTANTIATE(difi::context_version::alternative,
+                      tcp_client,
+                      difi::bit_depth::bits_8)
 
-template class difi_sink_cpp_impl<difi::context_version::standard,
-                                  udp_client,
-                                  difi::bit_depth::bits_16>;
-template class difi_sink_cpp_impl<difi::context_version::standard,
-                                  udp_client,
-                                  difi::bit_depth::bits_8>;
-template class difi_sink_cpp_impl<difi::context_version::standard,
-                                  tcp_client,
-                                  difi::bit_depth::bits_16>;
-template class difi_sink_cpp_impl<difi::context_version::standard,
-                                  tcp_client,
-                                  difi::bit_depth::bits_8>;
-
-template class difi_sink_cpp_impl<difi::context_version::alternative,
-                                  udp_client,
-                                  difi::bit_depth::bits_16>;
-template class difi_sink_cpp_impl<difi::context_version::alternative,
-                                  udp_client,
-                                  difi::bit_depth::bits_8>;
-template class difi_sink_cpp_impl<difi::context_version::alternative,
-                                  tcp_client,
-                                  difi::bit_depth::bits_16>;
-template class difi_sink_cpp_impl<difi::context_version::alternative,
-                                  tcp_client,
-                                  difi::bit_depth::bits_8>;
+#undef DIFI_SINK_INSTANTIATE
 
 } /* namespace difi */
 } /* namespace gr */

@@ -25,10 +25,11 @@ namespace gr {
     template <
         difi::context_version V = difi::context_version::standard,
         sink_transport Transport = udp_client,
-        difi::bit_depth BitDepth = difi::bit_depth::bits_16
+        difi::bit_depth BitDepth = difi::bit_depth::bits_16,
+        difi::byte_order ByteOrder = difi::byte_order::network
     >
     requires valid_bit_depth<BitDepth>
-    class difi_sink_cpp_impl : public difi_sink_cpp<V, Transport, BitDepth>
+    class difi_sink_cpp_impl : public difi_sink_cpp<V, Transport, BitDepth, ByteOrder>
     {
      public:
         using sample_t = sink_sample_type_t<BitDepth>;

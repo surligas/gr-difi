@@ -78,6 +78,18 @@ public:
     };
 
     /**
+     * @brief Byte order of the 16-bit I/Q samples in a data packet payload.
+     *
+     * Header, context and flow control words are always big-endian, as
+     * VITA 49 requires. This setting changes only the samples.
+     */
+    enum class byte_order : uint8_t {
+        big = 0,      ///< Most significant byte first
+        little = 1,   ///< Least significant byte first
+        network = big ///< Network byte order (same as big). The DIFI default.
+    };
+
+    /**
      * @brief Context packet specification versions.
      */
     enum class context_version : uint8_t {
@@ -804,13 +816,14 @@ public:
     /**
      * @brief Packs complex samples into raw payload bytes without scaling.
      *
+     * @tparam B byte order of 16-bit samples (default: network). No effect at 8 bits.
      * @tparam T sample type (gr_complex or std::complex<char>)
      * @param in input complex samples
      * @param num_samples number of complex samples
      * @param payload output buffer
      * @param depth bit depth (8 or 16)
      */
-    template <sample_type T>
+    template <byte_order B = byte_order::network, sample_type T>
     static void pack_samples(const T* in,
                              size_t num_samples,
                              void* payload,
@@ -819,12 +832,13 @@ public:
     /**
      * @brief Packs complex samples into raw payload span without scaling.
      *
+     * @tparam B byte order of 16-bit samples (default: network). No effect at 8 bits.
      * @tparam T sample type (gr_complex or std::complex<char>)
      * @param in input sample span
      * @param payload output payload span
      * @param depth bit depth (8 or 16)
      */
-    template <sample_type T>
+    template <byte_order B = byte_order::network, sample_type T>
     static void pack_samples(std::span<const T> in,
                              std::span<uint8_t> payload,
                              int depth);
@@ -832,6 +846,7 @@ public:
     /**
      * @brief Packs complex samples into raw payload bytes with gain and offset.
      *
+     * @tparam B byte order of 16-bit samples (default: network). No effect at 8 bits.
      * @tparam T sample type (gr_complex or std::complex<char>)
      * @param in input complex samples
      * @param num_samples number of complex samples
@@ -840,7 +855,7 @@ public:
      * @param gain scalar multiplier
      * @param offset complex offset added prior to gain
      */
-    template <sample_type T>
+    template <byte_order B = byte_order::network, sample_type T>
     static void pack_samples(const T* in,
                              size_t num_samples,
                              void* payload,
@@ -851,6 +866,7 @@ public:
     /**
      * @brief Packs complex samples into raw payload span with gain and offset.
      *
+     * @tparam B byte order of 16-bit samples (default: network). No effect at 8 bits.
      * @tparam T sample type (gr_complex or std::complex<char>)
      * @param in input sample span
      * @param payload output payload span
@@ -858,7 +874,7 @@ public:
      * @param gain scalar multiplier
      * @param offset complex offset added prior to gain
      */
-    template <sample_type T>
+    template <byte_order B = byte_order::network, sample_type T>
     static void pack_samples(std::span<const T> in,
                              std::span<uint8_t> payload,
                              int depth,
@@ -1041,22 +1057,22 @@ inline difi::context_variant difi::parse_context(std::span<const uint8_t> buf)
     return parse_context(buf.data(), buf.size());
 }
 
-template <sample_type T>
+template <difi::byte_order B, sample_type T>
 inline void difi::pack_samples(std::span<const T> in,
                                std::span<uint8_t> payload,
                                int depth)
 {
-    pack_samples(in.data(), in.size(), payload.data(), depth);
+    pack_samples<B>(in.data(), in.size(), payload.data(), depth);
 }
 
-template <sample_type T>
+template <difi::byte_order B, sample_type T>
 inline void difi::pack_samples(std::span<const T> in,
                                std::span<uint8_t> payload,
                                int depth,
                                float gain,
                                gr_complex offset)
 {
-    pack_samples(in.data(), in.size(), payload.data(), depth, gain, offset);
+    pack_samples<B>(in.data(), in.size(), payload.data(), depth, gain, offset);
 }
 
 template <sample_type T>
@@ -1069,6 +1085,7 @@ difi::unpack_samples(std::span<const uint8_t> payload, std::span<T> out, int dep
 // --- Namespace-Level Aliases for Backwards Compatibility ---
 using packet_type = difi::packet_type;
 using bit_depth = difi::bit_depth;
+using byte_order = difi::byte_order;
 using context_version = difi::context_version;
 using context_behavior = difi::context_behavior;
 using reference_point = difi::reference_point;

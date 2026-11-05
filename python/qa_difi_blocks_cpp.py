@@ -1292,6 +1292,44 @@ class qa_testcpp(gr_unittest.TestCase):
             tb_thread.join()
             sock.close()
 
+    def test_sink_byte_order_payload(self):
+        # The 16-bit I/Q samples follow the selected byte order.
+        # The header stays big-endian for every byte order.
+        samps_per_packet = 128
+        cases = [
+            (difi.byte_order.network, b'\x12\x34\x56\x78'),
+            (difi.byte_order.big, b'\x12\x34\x56\x78'),
+            (difi.byte_order.little, b'\x34\x12\x78\x56'),
+        ]
+        for order, expected in cases:
+            with self.subTest(byte_order=order):
+                sink_p, _ = get_open_ports()
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                sock.bind(('127.0.0.1', sink_p))
+                sock.settimeout(2.0)
+                try:
+                    tb = gr.top_block()
+                    src = blocks.vector_source_s(
+                        [0x1234, 0x5678] * 2 * samps_per_packet, False, 2)
+                    sink = difi_sink_cpp_sc16(
+                        '127.0.0.1', sink_p, 1000000, samps_per_packet,
+                        byte_order=order)
+                    tb.connect(src, sink)
+                    tb.run()
+
+                    # Skip the context packet sent before the first data packet
+                    pkt, _ = sock.recvfrom(2048)
+                    while (pkt[0] >> 4) == 4:
+                        pkt, _ = sock.recvfrom(2048)
+
+                    header = struct.unpack('!I', pkt[0:4])[0]
+                    assert header >> 28 == 1
+                    assert (header & 0xffff) * 4 == len(pkt)
+                    assert len(pkt) == DIFI_HEADER_SIZE + samps_per_packet * 4
+                    assert pkt[DIFI_HEADER_SIZE:] == expected * samps_per_packet
+                finally:
+                    sock.close()
+
 
 
 # helper functions

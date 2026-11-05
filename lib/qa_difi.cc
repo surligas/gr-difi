@@ -545,6 +545,71 @@ BOOST_AUTO_TEST_CASE(t_sample_packing_complex_int16)
                                   span_payload16.begin(), span_payload16.end());
 }
 
+BOOST_AUTO_TEST_CASE(t_sample_packing_byte_order)
+{
+    const std::vector<uint8_t> big = { 0x12, 0x34, 0x56, 0x78 };
+    const std::vector<uint8_t> little = { 0x34, 0x12, 0x78, 0x56 };
+    auto check_bytes = [](const std::vector<uint8_t>& payload,
+                          const std::vector<uint8_t>& expected) {
+        BOOST_CHECK_EQUAL_COLLECTIONS(
+            payload.begin(), payload.end(), expected.begin(), expected.end());
+    };
+
+    // complex<int16_t> input, every byte order
+    const std::complex<int16_t> s16(0x1234, 0x5678);
+    std::vector<uint8_t> payload(4);
+    difi::pack_samples<difi::byte_order::big>(&s16, 1, payload.data(), 16);
+    check_bytes(payload, big);
+    difi::pack_samples<difi::byte_order::network>(&s16, 1, payload.data(), 16);
+    check_bytes(payload, big);
+    difi::pack_samples(&s16, 1, payload.data(), 16);
+    check_bytes(payload, big);
+    difi::pack_samples<difi::byte_order::little>(&s16, 1, payload.data(), 16);
+    check_bytes(payload, little);
+
+    // Span overload
+    std::vector<uint8_t> span_payload(4);
+    difi::pack_samples<difi::byte_order::little>(
+        std::span<const std::complex<int16_t>>(&s16, 1),
+        std::span<uint8_t>(span_payload),
+        16);
+    check_bytes(span_payload, little);
+
+    // gr_complex input
+    const gr_complex fc(static_cast<float>(0x1234), static_cast<float>(0x5678));
+    difi::pack_samples<difi::byte_order::little>(&fc, 1, payload.data(), 16);
+    check_bytes(payload, little);
+    difi::pack_samples<difi::byte_order::big>(&fc, 1, payload.data(), 16);
+    check_bytes(payload, big);
+
+    // Gain and offset overload
+    const gr_complex offset(4.0f, 8.0f);
+    const gr_complex fc_shifted = fc - offset;
+    difi::pack_samples<difi::byte_order::little>(
+        &fc_shifted, 1, payload.data(), 16, 1.0f, offset);
+    check_bytes(payload, little);
+    difi::pack_samples<difi::byte_order::big>(
+        &fc_shifted, 1, payload.data(), 16, 1.0f, offset);
+    check_bytes(payload, big);
+
+    // 8-bit samples are single bytes, so the byte order changes nothing
+    const size_t N = 16;
+    std::vector<std::complex<char>> s8(N);
+    std::vector<gr_complex> f8(N);
+    for (size_t i = 0; i < N; ++i) {
+        s8[i] = std::complex<char>(static_cast<char>(i), static_cast<char>(-i));
+        f8[i] = gr_complex(static_cast<float>(i), -static_cast<float>(i));
+    }
+    std::vector<uint8_t> payload8_big(N * 2);
+    std::vector<uint8_t> payload8_little(N * 2);
+    difi::pack_samples<difi::byte_order::big>(s8.data(), N, payload8_big.data(), 8);
+    difi::pack_samples<difi::byte_order::little>(s8.data(), N, payload8_little.data(), 8);
+    check_bytes(payload8_little, payload8_big);
+    difi::pack_samples<difi::byte_order::big>(f8.data(), N, payload8_big.data(), 8);
+    difi::pack_samples<difi::byte_order::little>(f8.data(), N, payload8_little.data(), 8);
+    check_bytes(payload8_little, payload8_big);
+}
+
 BOOST_AUTO_TEST_CASE(t_timestamp_advance)
 {
     uint32_t full = 100;
@@ -622,6 +687,14 @@ BOOST_AUTO_TEST_CASE(t_difi_sink_template_instantiations)
     auto sink_sc8 = difi_sink_cpp<difi::context_version::standard, udp_client, difi::bit_depth::bits_8>::make(
         "127.0.0.1", 5003, 1000000, 512);
     BOOST_REQUIRE(sink_sc8 != nullptr);
+
+    // Standard context, UDP, 16-bit, little-endian samples
+    auto sink_little =
+        difi_sink_cpp<difi::context_version::standard,
+                      udp_client,
+                      difi::bit_depth::bits_16,
+                      difi::byte_order::little>::make("127.0.0.1", 5006, 1000000, 512);
+    BOOST_REQUIRE(sink_little != nullptr);
 
     // Streaming mode (default length_tag_name is empty)
     BOOST_CHECK_EQUAL(sink_default->burst_mode(), false);

@@ -8,7 +8,7 @@ label: DIFI Sink
 category: '[DIFI]'
 templates:
   imports: import difi
-  make: difi.difi_sink_cpp_${ 'sc8' if bit_depth == '8' else 'sc16' }(${ip_addr}, ${port}, ${sample_rate}, ${data_size}, ${stream_id}, ${context_packet_send_count}, ${ '""' if mode == 'streaming' else length_tag_name }, int(${lead_time_us}), int(${context_pack_size}), int(${protocol}), float(${rf_freq}), float(${if_freq}), float(${bandwidth}), float(${rf_gain}), float(${if_gain}), float(${ref_level}), float(${if_band_offset}), int(${ref_point}), int(${time_source}), bool(${rate_control}), float(${max_buffer_fill_pct}), float(${buffer_fill_delta}))
+  make: difi.difi_sink_cpp_${ 'sc8' if bit_depth == '8' else 'sc16' }(${ip_addr}, ${port}, ${sample_rate}, ${data_size}, ${stream_id}, ${context_packet_send_count}, ${ '""' if mode == 'streaming' else length_tag_name }, int(${lead_time_us}), int(${context_pack_size}), int(${protocol}), float(${rf_freq}), float(${if_freq}), float(${bandwidth}), float(${rf_gain}), float(${if_gain}), float(${ref_level}), float(${if_band_offset}), int(${ref_point}), int(${time_source}), bool(${rate_control}), float(${max_buffer_fill_pct}), float(${buffer_fill_delta}), difi.byte_order.${byte_order})
   callbacks:
   - set_rf_freq(${rf_freq})
   - set_if_freq(${if_freq})
@@ -30,6 +30,13 @@ parameters:
   options: ['8', '16']
   option_labels: ['8-bit (Complex Byte)', '16-bit (Complex Short)']
   default: '16'
+- id: byte_order
+  label: IQ Byte Order
+  dtype: enum
+  options: ['network', 'little', 'big']
+  option_labels: ['Network', 'Little', 'Big']
+  default: 'network'
+  hide: ${ ('all' if bit_depth == '8' else 'part') }
 - id: mode
   label: Mode
   dtype: enum
@@ -191,6 +198,13 @@ documentation: |-
      Input types:
      - 8-bit depth: Complex Byte (sc8, interleaved chars)
      - 16-bit depth: Complex Short (sc16, interleaved shorts)
+
+     IQ byte order:
+     - Sets the byte order of the 16-bit I/Q samples in the data packets.
+     - Network is the same as Big. DIFI requires it, so it is the default.
+     - Select Little only if the receiver expects little-endian samples.
+     - Header and context packet words are always big-endian.
+     - It has no effect at 8-bit depth, so it is hidden there.
 
      Modes:
      - Streaming: Continuous streaming of samples. Length tag name is empty.

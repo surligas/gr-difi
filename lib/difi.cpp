@@ -20,6 +20,24 @@
 
 namespace gr::difi {
 
+namespace {
+
+/*
+ * Converts 16-bit values from host byte order to byte order B, in place.
+ * The choice is made at compile time. If the host already uses B, this
+ * does nothing.
+ */
+template <difi::byte_order B>
+void host_to_byte_order_16(uint16_t* data, size_t num_points)
+{
+    constexpr bool host_is_little = std::endian::native == std::endian::little;
+    if constexpr (host_is_little != (B == difi::byte_order::little)) {
+        volk_16u_byteswap(data, static_cast<unsigned int>(num_points));
+    }
+}
+
+} // namespace
+
 double difi::vita_fixed_to_double(uint64_t bits)
 {
     return static_cast<double>(bits) / static_cast<double>(1ULL << 20);
@@ -775,7 +793,7 @@ std::pair<uint32_t, uint64_t> difi::advance_timestamp(uint32_t full,
     return { full, frac };
 }
 
-template <sample_type T>
+template <difi::byte_order B, sample_type T>
 void difi::pack_samples(const T* in, size_t num_samples, void* payload, int depth)
 {
     if (num_samples == 0 || in == nullptr || payload == nullptr) {
@@ -788,7 +806,7 @@ void difi::pack_samples(const T* in, size_t num_samples, void* payload, int dept
             int16_t* out16 = static_cast<int16_t*>(payload);
             volk_32f_s32f_convert_16i(
                 out16, src_f, 1.0f, static_cast<unsigned int>(num_samples * 2));
-            swap_endian_16(reinterpret_cast<uint16_t*>(out16), num_samples * 2);
+            host_to_byte_order_16<B>(reinterpret_cast<uint16_t*>(out16), num_samples * 2);
         } else {
             int8_t* out8 = static_cast<int8_t*>(payload);
             volk_32f_s32f_convert_8i(
@@ -797,7 +815,8 @@ void difi::pack_samples(const T* in, size_t num_samples, void* payload, int dept
     } else if constexpr (std::is_same_v<T, std::complex<int16_t>>) {
         if (depth == 16) {
             std::memcpy(payload, in, num_samples * sizeof(T));
-            swap_endian_16(reinterpret_cast<uint16_t*>(payload), num_samples * 2);
+            host_to_byte_order_16<B>(reinterpret_cast<uint16_t*>(payload),
+                                     num_samples * 2);
         } else {
             const int16_t* in16 = reinterpret_cast<const int16_t*>(in);
             int8_t* out8 = static_cast<int8_t*>(payload);
@@ -808,14 +827,14 @@ void difi::pack_samples(const T* in, size_t num_samples, void* payload, int dept
         if (depth == 16) {
             int16_t* out16 = static_cast<int16_t*>(payload);
             volk_8i_convert_16i(out16, in8, static_cast<unsigned int>(num_samples * 2));
-            swap_endian_16(reinterpret_cast<uint16_t*>(out16), num_samples * 2);
+            host_to_byte_order_16<B>(reinterpret_cast<uint16_t*>(out16), num_samples * 2);
         } else {
             std::memcpy(payload, in, num_samples * sizeof(T));
         }
     }
 }
 
-template <sample_type T>
+template <difi::byte_order B, sample_type T>
 void difi::pack_samples(const T* in,
                         size_t num_samples,
                         void* payload,
@@ -843,7 +862,7 @@ void difi::pack_samples(const T* in,
             int16_t* out16 = static_cast<int16_t*>(payload);
             volk_32f_s32f_convert_16i(
                 out16, src_f, gain, static_cast<unsigned int>(num_samples * 2));
-            swap_endian_16(reinterpret_cast<uint16_t*>(out16), num_samples * 2);
+            host_to_byte_order_16<B>(reinterpret_cast<uint16_t*>(out16), num_samples * 2);
         } else {
             int8_t* out8 = static_cast<int8_t*>(payload);
             volk_32f_s32f_convert_8i(
@@ -864,7 +883,7 @@ void difi::pack_samples(const T* in,
             int16_t* out16 = static_cast<int16_t*>(payload);
             volk_32f_s32f_convert_16i(
                 out16, temp_f.data(), gain, static_cast<unsigned int>(num_samples * 2));
-            swap_endian_16(reinterpret_cast<uint16_t*>(out16), num_samples * 2);
+            host_to_byte_order_16<B>(reinterpret_cast<uint16_t*>(out16), num_samples * 2);
         } else {
             int8_t* out8 = static_cast<int8_t*>(payload);
             volk_32f_s32f_convert_8i(
@@ -885,7 +904,7 @@ void difi::pack_samples(const T* in,
             int16_t* out16 = static_cast<int16_t*>(payload);
             volk_32f_s32f_convert_16i(
                 out16, temp_f.data(), gain, static_cast<unsigned int>(num_samples * 2));
-            swap_endian_16(reinterpret_cast<uint16_t*>(out16), num_samples * 2);
+            host_to_byte_order_16<B>(reinterpret_cast<uint16_t*>(out16), num_samples * 2);
         } else {
             int8_t* out8 = static_cast<int8_t*>(payload);
             volk_32f_s32f_convert_8i(
@@ -1269,22 +1288,26 @@ difi::make_pkt_n_dict(uint8_t pkt_n, size_t data_len, uint32_t full, uint64_t fr
     return dict;
 }
 
-template void difi::pack_samples<gr_complex>(const gr_complex*, size_t, void*, int);
-template void
-difi::pack_samples<std::complex<char>>(const std::complex<char>*, size_t, void*, int);
-template void
-difi::pack_samples<std::complex<int8_t>>(const std::complex<int8_t>*, size_t, void*, int);
-template void
-difi::pack_samples<std::complex<int16_t>>(const std::complex<int16_t>*, size_t, void*, int);
+/*
+ * Instantiates both pack_samples() overloads for one byte order and one sample
+ * type. byte_order::network is the same value as byte_order::big, so it needs
+ * no instantiation of its own.
+ */
+#define DIFI_INSTANTIATE_PACK_SAMPLES(B, T)                               \
+    template void difi::pack_samples<B, T>(const T*, size_t, void*, int); \
+    template void difi::pack_samples<B, T>(                               \
+        const T*, size_t, void*, int, float, gr_complex);
 
-template void
-difi::pack_samples<gr_complex>(const gr_complex*, size_t, void*, int, float, gr_complex);
-template void difi::pack_samples<std::complex<char>>(
-    const std::complex<char>*, size_t, void*, int, float, gr_complex);
-template void difi::pack_samples<std::complex<int8_t>>(
-    const std::complex<int8_t>*, size_t, void*, int, float, gr_complex);
-template void difi::pack_samples<std::complex<int16_t>>(
-    const std::complex<int16_t>*, size_t, void*, int, float, gr_complex);
+DIFI_INSTANTIATE_PACK_SAMPLES(difi::byte_order::big, gr_complex)
+DIFI_INSTANTIATE_PACK_SAMPLES(difi::byte_order::big, std::complex<char>)
+DIFI_INSTANTIATE_PACK_SAMPLES(difi::byte_order::big, std::complex<int8_t>)
+DIFI_INSTANTIATE_PACK_SAMPLES(difi::byte_order::big, std::complex<int16_t>)
+DIFI_INSTANTIATE_PACK_SAMPLES(difi::byte_order::little, gr_complex)
+DIFI_INSTANTIATE_PACK_SAMPLES(difi::byte_order::little, std::complex<char>)
+DIFI_INSTANTIATE_PACK_SAMPLES(difi::byte_order::little, std::complex<int8_t>)
+DIFI_INSTANTIATE_PACK_SAMPLES(difi::byte_order::little, std::complex<int16_t>)
+
+#undef DIFI_INSTANTIATE_PACK_SAMPLES
 
 template size_t
 difi::unpack_samples<gr_complex>(const void*, size_t, gr_complex*, size_t, int);
