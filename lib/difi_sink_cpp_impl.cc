@@ -415,8 +415,8 @@ void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::wait_rate_control(
     // Rate limiting pacing:
     // 1. Push samples until estimated or reported fill reaches max_buffer_fill_pct.
     // 2. Once reached, sleep for the time needed to drain the excess above threshold.
-    // 3. Wake immediately if a flow control packet reports nearly_empty, underflow, empty,
-    //    or fill below max_buffer_fill_pct.
+    // 3. Wake immediately if a new flow control packet reports nearly_empty, underflow,
+    //    empty, or fill below max_buffer_fill_pct.
     std::unique_lock<std::mutex> lock(m_fc_mutex);
     update_estimated_fill(std::chrono::steady_clock::now());
 
@@ -435,11 +435,15 @@ void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::wait_rate_control(
             uint64_t sleep_ns = static_cast<uint64_t>(
                 (bytes_to_drain / drain_rate_Bps) * 1000000000.0);
             if (sleep_ns > 0) {
+                // Do not test the flags of the last report here. They stay set
+                // until the next report arrives, even after the sink has filled
+                // the buffer, so the sink would keep sending at full speed. A
+                // new report of an empty buffer still ends the wait at once:
+                // the receive thread resets the estimate to zero, so the sink
+                // sends the target fill without waiting.
                 m_fc_cv.wait_for(
                     lock, std::chrono::nanoseconds(sleep_ns), [this, max_fill_bytes]() {
                         return !m_rx_running.load() || !m_rate_control.load() ||
-                               m_last_fc.nearly_empty || m_last_fc.underflow ||
-                               m_last_fc.buffer_level == 0 ||
                                m_est_fill_bytes < max_fill_bytes;
                     });
                 update_estimated_fill(std::chrono::steady_clock::now());

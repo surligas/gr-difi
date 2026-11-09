@@ -75,6 +75,7 @@ list(APPEND test_difi_sources
     qa_tcp_server.cc
     qa_tcp_client.cc
     qa_difi.cc
+    qa_sink_rate_control.cc
 )
 # Anything we need to link to for the unit tests go here
 list(APPEND GR_TEST_TARGET_DEPS gnuradio-difi)
