@@ -10,11 +10,10 @@
 
 #include <difi/difi_sink_cpp.h>
 #include <difi/difi.hpp>
+#include <gnuradio/thread/thread.h>
 #include <arpa/inet.h>
 #include <atomic>
-#include <condition_variable>
 #include <memory>
-#include <mutex>
 #include <span>
 #include <thread>
 #include <vector>
@@ -59,8 +58,11 @@ namespace gr {
         std::atomic<float> m_max_buffer_fill_pct{50.0f};
         std::thread m_rx_thread;
         std::atomic<bool> m_rx_running{false};
-        mutable std::mutex m_fc_mutex;
-        std::condition_variable m_fc_cv;
+        // GNU Radio stops a flowgraph by interrupting the threads of its
+        // blocks. Only the Boost based types of gr::thread end a wait when the
+        // thread is interrupted, and work() waits on this condition variable.
+        mutable gr::thread::mutex m_fc_mutex;
+        gr::thread::condition_variable m_fc_cv;
         std::atomic<bool> m_first_fc_received{false};
         difi::flow_control m_last_fc{};
         double m_est_fill_bytes{0.0};
@@ -253,37 +255,37 @@ namespace gr {
 
       float last_buffer_fill_pct() const override
       {
-          std::lock_guard<std::mutex> lock(m_fc_mutex);
+          gr::thread::scoped_lock lock(m_fc_mutex);
           return m_last_fc.buffer_fill_pct();
       }
       uint16_t last_buffer_level() const override
       {
-          std::lock_guard<std::mutex> lock(m_fc_mutex);
+          gr::thread::scoped_lock lock(m_fc_mutex);
           return m_last_fc.buffer_level;
       }
       uint64_t device_buffer_size() const override
       {
-          std::lock_guard<std::mutex> lock(m_fc_mutex);
+          gr::thread::scoped_lock lock(m_fc_mutex);
           return m_last_fc.buffer_size;
       }
       bool device_nearly_full() const override
       {
-          std::lock_guard<std::mutex> lock(m_fc_mutex);
+          gr::thread::scoped_lock lock(m_fc_mutex);
           return m_last_fc.nearly_full;
       }
       bool device_nearly_empty() const override
       {
-          std::lock_guard<std::mutex> lock(m_fc_mutex);
+          gr::thread::scoped_lock lock(m_fc_mutex);
           return m_last_fc.nearly_empty;
       }
       bool device_overflow() const override
       {
-          std::lock_guard<std::mutex> lock(m_fc_mutex);
+          gr::thread::scoped_lock lock(m_fc_mutex);
           return m_last_fc.overflow;
       }
       bool device_underflow() const override
       {
-          std::lock_guard<std::mutex> lock(m_fc_mutex);
+          gr::thread::scoped_lock lock(m_fc_mutex);
           return m_last_fc.underflow;
       }
 

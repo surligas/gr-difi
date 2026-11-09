@@ -20,7 +20,9 @@
 #include <chrono>
 #include <complex>
 #include <cstring>
+#include <future>
 #include <string>
+#include <thread>
 
 using namespace gr::difi;
 using namespace gr::difi::qa;
@@ -107,7 +109,10 @@ public:
         m_tb->start();
     }
 
-    ~paced_sink()
+    ~paced_sink() { stop(); }
+
+    /*! \brief Stops the flowgraph and waits for it. Calling it again does nothing. */
+    void stop()
     {
         m_tb->stop();
         m_tb->wait();
@@ -168,6 +173,25 @@ double seconds_since(std::chrono::steady_clock::time_point start)
     return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 }
 
+/*!
+ * \brief Stops the flowgraph of \p sink and tells whether it stopped within
+ * \p limit.
+ *
+ * If it takes longer, the fake digitizer sends an empty buffer report. This
+ * ends any wait of the sink, so the flowgraph still stops and a failing test
+ * does not hang.
+ */
+bool stops_within(paced_sink& sink, peer& digitizer, std::chrono::milliseconds limit)
+{
+    auto stopped = std::async(std::launch::async, [&sink] { sink.stop(); });
+    if (stopped.wait_for(limit) == std::future_status::ready) {
+        return true;
+    }
+    digitizer.reply(report(0, true));
+    stopped.wait();
+    return false;
+}
+
 } // namespace
 
 /*
@@ -195,4 +219,38 @@ BOOST_AUTO_TEST_CASE(t_empty_report_releases_only_the_target_fill)
         TARGET_FILL_BYTES + DRAIN_BYTES_PER_SEC * elapsed + 4 * PAYLOAD_BYTES;
     BOOST_CHECK_GE(sent, TARGET_FILL_BYTES);
     BOOST_CHECK_LE(sent, allowed);
+}
+
+/*
+ * A digitizer that never answers must not keep the flowgraph from stopping.
+ * Until the first report arrives, the sink waits inside work().
+ */
+BOOST_AUTO_TEST_CASE(t_stops_while_waiting_for_the_first_report)
+{
+    uint16_t port = free_port();
+    peer digitizer(port);
+    paced_sink sink(port);
+
+    // The context packet shows that the sink now waits for a report.
+    BOOST_REQUIRE(!digitizer.recv().empty());
+
+    BOOST_CHECK(stops_within(sink, digitizer, 1000ms));
+}
+
+/*
+ * A report of a full buffer makes the sink wait until the digitizer has
+ * transmitted the excess samples, which here takes about 100 s. Stopping the
+ * flowgraph must not wait for that.
+ */
+BOOST_AUTO_TEST_CASE(t_stops_during_a_long_pacing_wait)
+{
+    uint16_t port = free_port();
+    peer digitizer(port);
+    paced_sink sink(port);
+
+    BOOST_REQUIRE(!digitizer.recv().empty());
+    digitizer.reply(report(4095, false));
+    std::this_thread::sleep_for(200ms);
+
+    BOOST_CHECK(stops_within(sink, digitizer, 1000ms));
 }

@@ -6,6 +6,7 @@
 #include "difi_sink_cpp_impl.h"
 #include <gnuradio/io_signature.h>
 #include <arpa/inet.h>
+#include <boost/chrono/duration.hpp>
 #include <algorithm>
 #include <chrono>
 #include <cstring>
@@ -199,7 +200,7 @@ bool difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::start()
 {
     if (m_rate_control.load()) {
         {
-            std::lock_guard<std::mutex> lock(m_fc_mutex);
+            gr::thread::scoped_lock lock(m_fc_mutex);
             m_est_fill_bytes = 0.0;
             m_last_update_time = std::chrono::steady_clock::now();
         }
@@ -271,7 +272,7 @@ void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::rx_loop()
             if (fc_opt) {
                 bool should_wake = false;
                 {
-                    std::lock_guard<std::mutex> lock(m_fc_mutex);
+                    gr::thread::scoped_lock lock(m_fc_mutex);
                     bool first = !m_first_fc_received.load();
                     m_last_fc = *fc_opt;
                     m_last_update_time = std::chrono::steady_clock::now();
@@ -397,12 +398,12 @@ void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::wait_rate_control(
 
     // Handshake: wait for the first flow control frame
     if (!m_first_fc_received.load()) {
-        std::unique_lock<std::mutex> lock(m_fc_mutex);
+        gr::thread::scoped_lock lock(m_fc_mutex);
         while (m_rx_running.load() && !m_first_fc_received.load()) {
             lock.unlock();
             send_context();
             lock.lock();
-            m_fc_cv.wait_for(lock, std::chrono::milliseconds(500), [this]() {
+            m_fc_cv.wait_for(lock, boost::chrono::milliseconds(500), [this]() {
                 return !m_rx_running.load() || m_first_fc_received.load();
             });
         }
@@ -417,7 +418,7 @@ void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::wait_rate_control(
     // 2. Once reached, sleep for the time needed to drain the excess above threshold.
     // 3. Wake immediately if a new flow control packet reports nearly_empty, underflow,
     //    empty, or fill below max_buffer_fill_pct.
-    std::unique_lock<std::mutex> lock(m_fc_mutex);
+    gr::thread::scoped_lock lock(m_fc_mutex);
     update_estimated_fill(std::chrono::steady_clock::now());
 
     double samp_rate = (d_samp_rate > 0.0) ? d_samp_rate : m_last_fc.sample_rate;
@@ -442,7 +443,7 @@ void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::wait_rate_control(
                 // the receive thread resets the estimate to zero, so the sink
                 // sends the target fill without waiting.
                 m_fc_cv.wait_for(
-                    lock, std::chrono::nanoseconds(sleep_ns), [this, max_fill_bytes]() {
+                    lock, boost::chrono::nanoseconds(sleep_ns), [this, max_fill_bytes]() {
                         return !m_rx_running.load() || !m_rate_control.load() ||
                                m_est_fill_bytes < max_fill_bytes;
                     });
