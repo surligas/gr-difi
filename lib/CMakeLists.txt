@@ -36,7 +36,10 @@ if(NOT difi_sources)
 endif(NOT difi_sources)
 
 add_library(gnuradio-difi SHARED ${difi_sources})
-target_link_libraries(gnuradio-difi gnuradio::gnuradio-runtime Volk::volk)
+target_link_libraries(gnuradio-difi
+    PUBLIC gnuradio::gnuradio-runtime Volk::volk
+    PRIVATE Boost::chrono
+)
 target_include_directories(gnuradio-difi
     PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../include>
     PUBLIC $<INSTALL_INTERFACE:include>

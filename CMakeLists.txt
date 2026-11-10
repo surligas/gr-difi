@@ -115,6 +115,7 @@ endif(APPLE)
 # Find gnuradio build dependencies
 ########################################################################
 find_package(Doxygen)
+find_package(Boost REQUIRED COMPONENTS chrono)
 
 # Only needed to build the C++ unit tests, so a missing component disables
 # them rather than failing the build.
