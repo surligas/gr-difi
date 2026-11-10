@@ -238,6 +238,32 @@ BOOST_AUTO_TEST_CASE(t_empty_report_releases_only_the_target_fill)
 }
 
 /*
+ * While the sink fills an empty buffer up to the target, it must not send faster
+ * than twice real time. It must not send much slower either, because sleeps that
+ * end late must not lower the rate.
+ */
+BOOST_AUTO_TEST_CASE(t_refill_is_limited_to_twice_real_time)
+{
+    uint16_t port = free_port();
+    peer digitizer(port);
+    paced_sink sink(port);
+
+    BOOST_REQUIRE(!digitizer.recv().empty());
+    digitizer.reply(report(0, true));
+    const auto start = std::chrono::steady_clock::now();
+
+    // At twice real time, the buffer needs about 0.25 s to reach the target.
+    // This window ends before that, so only the rate limit applies.
+    size_t sent = data_bytes_until(digitizer, start + 100ms);
+    const double limit = 2 * DRAIN_BYTES_PER_SEC * seconds_since(start);
+
+    // The margin covers the few packets that the sink sends at once at the
+    // start, because its planned send time starts up to 1 ms in the past.
+    BOOST_CHECK_LE(sent, limit + 4 * PAYLOAD_BYTES);
+    BOOST_CHECK_GE(sent, 0.75 * limit);
+}
+
+/*
  * A digitizer that never answers must not keep the flowgraph from stopping.
  * Until the first report arrives, the sink waits inside work().
  */

@@ -480,6 +480,32 @@ void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::wait_rate_control(
             update_estimated_fill(std::chrono::steady_clock::now());
         }
 
+        /*
+         * Limit the rate also while the buffer is below the target.
+         *
+         * Move the planned send time forward by a fixed step for each packet,
+         * not from the current time. A sleep that ends late is then made up
+         * by the next packets, so the average rate does not drop.
+         * After a long pause, for example a wait for the buffer to drain,
+         * start again close to the current time, so that the sink does not
+         * send all the missed packets at once.
+         */
+        const auto now = std::chrono::steady_clock::now();
+        m_next_send_time = std::max(m_next_send_time, now - s_max_send_lag);
+        if (m_next_send_time > now) {
+            const auto sleep_ns =
+                std::chrono::nanoseconds(m_next_send_time - now).count();
+            m_fc_cv.wait_for(lock, boost::chrono::nanoseconds(sleep_ns), [this]() {
+                return !m_rx_running.load() || !m_rate_control.load();
+            });
+            if (!m_rx_running.load() || !m_rate_control.load()) {
+                return;
+            }
+        }
+        m_next_send_time += std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::duration<double>(pkt_bytes /
+                                          (s_max_rate_factor * drain_rate_Bps)));
+
         m_est_fill_bytes += pkt_bytes;
     }
 }

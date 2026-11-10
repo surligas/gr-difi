@@ -13,6 +13,7 @@
 #include <gnuradio/thread/thread.h>
 #include <arpa/inet.h>
 #include <atomic>
+#include <chrono>
 #include <memory>
 #include <span>
 #include <thread>
@@ -72,6 +73,8 @@ namespace gr {
         uint64_t m_fc_reports{0};
         double m_est_fill_bytes{0.0};
         std::chrono::steady_clock::time_point m_last_update_time{};
+        /* The earliest time at which the next packet may be sent. */
+        std::chrono::steady_clock::time_point m_next_send_time{};
 
         std::atomic<float> m_buffer_fill_delta{1.0f};
         bool m_fc_published{false};
@@ -83,6 +86,24 @@ namespace gr {
 
         static constexpr uint32_t s_bytes_per_sample = sizeof(sample_t);
         static constexpr int s_bit_depth_val = static_cast<int>(BitDepth);
+
+        /*
+         * With rate control, the sink never sends faster than this multiple of
+         * real time. Bursts at full line rate can lose packets on the way to
+         * the digitizer. At twice real time, the buffer gains samples as fast
+         * as the digitizer transmits them. An empty buffer then reaches a
+         * target of N seconds of samples in about N seconds.
+         */
+        static constexpr double s_max_rate_factor = 2.0;
+
+        /*
+         * How far the planned send time may fall behind the clock. It must be
+         * longer than the delay of a late sleep, so that the next packets can
+         * make up for it. It must be short, because the sink sends the missed
+         * packets as one burst, without sleeping. At 9 Msps and 16 bits, 1 ms
+         * is 72 KB.
+         */
+        static constexpr std::chrono::milliseconds s_max_send_lag{1};
 
         int d_stream_number;
         double d_samp_rate;
