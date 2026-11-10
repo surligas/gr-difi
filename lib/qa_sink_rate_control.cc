@@ -137,14 +137,16 @@ private:
  * \brief Builds the flow control report of a digitizer.
  *
  * \param level buffer level, from 0 (empty) to 4095 (full)
- * \param nearly_empty value of the nearly empty indicator
+ * \param nearly_empty true if the report says that the buffer is nearly empty
+ * \param underflow true if the report says that the buffer had an underflow
  */
-std::string report(uint16_t level, bool nearly_empty)
+std::string report(uint16_t level, bool nearly_empty, bool underflow = false)
 {
     difi::flow_control fc;
     fc.buffer_size = BUFFER_SIZE;
     fc.buffer_level = level;
     fc.nearly_empty = nearly_empty;
+    fc.underflow = underflow;
     fc.sample_rate = SAMP_RATE;
     auto raw = difi::pack_flow_control(fc);
     return std::string(raw.begin(), raw.end());
@@ -293,6 +295,29 @@ BOOST_AUTO_TEST_CASE(t_fuller_report_makes_the_sink_wait)
 
     // Only packets that the sink sent before it received the report may arrive.
     BOOST_CHECK_LE(data_bytes_until(digitizer, start + 300ms), 3 * PAYLOAD_BYTES);
+    BOOST_CHECK_GT(data_bytes_until(digitizer, start + 1000ms), 0U);
+}
+
+/*
+ * A digitizer may report a nearly empty buffer or an underflow while the level
+ * is still above the target. The sink must trust the level and wait. It must
+ * not send the target fill on top of the samples that are in the buffer.
+ */
+BOOST_AUTO_TEST_CASE(t_nearly_empty_report_uses_the_level)
+{
+    uint16_t port = free_port();
+    peer digitizer(port);
+    paced_sink sink(port);
+
+    BOOST_REQUIRE(!digitizer.recv().empty());
+    // Level 31 is about 3 MB, which is about 2 MB above the target. The
+    // digitizer needs about 0.5 s to transmit this excess.
+    digitizer.reply(report(31, true, true));
+    const auto start = std::chrono::steady_clock::now();
+
+    // The sink sent no data before this first report, so it must send none
+    // until the excess is transmitted.
+    BOOST_CHECK_EQUAL(data_bytes_until(digitizer, start + 300ms), 0U);
     BOOST_CHECK_GT(data_bytes_until(digitizer, start + 1000ms), 0U);
 }
 

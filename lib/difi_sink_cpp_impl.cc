@@ -278,17 +278,23 @@ void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::rx_loop()
                     m_fc_reports++;
                     m_last_update_time = std::chrono::steady_clock::now();
 
-                    if (fc_opt->underflow || fc_opt->nearly_empty ||
-                        fc_opt->buffer_level == 0) {
-                        m_est_fill_bytes = 0.0;
-                        should_wake = true;
-                    } else if (fc_opt->buffer_size > 0) {
+                    /*
+                     * Take the estimate from the level, even when the report
+                     * says that the buffer is nearly empty or had an underflow.
+                     * The digitizer may set these flags while the level is
+                     * still above the target. An estimate of zero would make
+                     * the sink send the whole target fill on top of the
+                     * samples that are already in the buffer.
+                     */
+                    if (fc_opt->buffer_size > 0) {
                         m_est_fill_bytes =
                             static_cast<double>(fc_opt->buffer_size) *
                             (static_cast<double>(fc_opt->buffer_level) / 4095.0);
-                        if (fc_opt->buffer_fill_pct() < m_max_buffer_fill_pct.load()) {
-                            should_wake = true;
-                        }
+                    }
+                    if (fc_opt->underflow || fc_opt->nearly_empty ||
+                        fc_opt->buffer_level == 0 ||
+                        fc_opt->buffer_fill_pct() < m_max_buffer_fill_pct.load()) {
+                        should_wake = true;
                     }
                     m_first_fc_received.store(true);
                     if (first) {
