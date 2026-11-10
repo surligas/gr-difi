@@ -299,6 +299,31 @@ BOOST_AUTO_TEST_CASE(t_fuller_report_makes_the_sink_wait)
 }
 
 /*
+ * A report can show that the buffer drained faster than the sink expects, while
+ * it still holds more than the target. The sink must then shorten its wait.
+ * Otherwise it sleeps for the whole time computed from the old level, and the
+ * buffer can run empty.
+ */
+BOOST_AUTO_TEST_CASE(t_emptier_report_shortens_the_wait)
+{
+    uint16_t port = free_port();
+    peer digitizer(port);
+    paced_sink sink(port);
+
+    BOOST_REQUIRE(!digitizer.recv().empty());
+    // The digitizer needs about 100 s to transmit a full buffer of 400 MB.
+    digitizer.reply(report(4095, false));
+    std::this_thread::sleep_for(200ms);
+
+    // Level 31 is about 3 MB, which is about 2 MB above the target. The
+    // digitizer needs about 0.5 s to transmit this excess.
+    digitizer.reply(report(31, false));
+    const auto start = std::chrono::steady_clock::now();
+
+    BOOST_CHECK_GT(data_bytes_until(digitizer, start + 1000ms), 0U);
+}
+
+/*
  * A digitizer may report a nearly empty buffer or an underflow while the level
  * is still above the target. The sink must trust the level and wait. It must
  * not send the target fill on top of the samples that are in the buffer.

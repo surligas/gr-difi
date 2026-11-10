@@ -270,10 +270,8 @@ void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::rx_loop()
         case difi::packet_type::command: {
             auto fc_opt = difi::parse_flow_control(pkt);
             if (fc_opt) {
-                bool should_wake = false;
                 {
                     gr::thread::scoped_lock lock(m_fc_mutex);
-                    bool first = !m_first_fc_received.load();
                     m_last_fc = *fc_opt;
                     m_fc_reports++;
                     m_last_update_time = std::chrono::steady_clock::now();
@@ -291,19 +289,16 @@ void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::rx_loop()
                             static_cast<double>(fc_opt->buffer_size) *
                             (static_cast<double>(fc_opt->buffer_level) / 4095.0);
                     }
-                    if (fc_opt->underflow || fc_opt->nearly_empty ||
-                        fc_opt->buffer_level == 0 ||
-                        fc_opt->buffer_fill_pct() < m_max_buffer_fill_pct.load()) {
-                        should_wake = true;
-                    }
                     m_first_fc_received.store(true);
-                    if (first) {
-                        should_wake = true;
-                    }
                 }
-                if (should_wake) {
-                    m_fc_cv.notify_all();
-                }
+                /*
+                 * Wake the pacing wait on every report, even when the buffer
+                 * is still above the target. The wait computes its sleep from
+                 * the estimate it had when it started. If the buffer drained
+                 * faster than expected, the sink would sleep too long and the
+                 * buffer could run empty.
+                 */
+                m_fc_cv.notify_all();
                 check_and_publish_flow_control(*fc_opt);
             }
             break;
@@ -426,8 +421,8 @@ void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::wait_rate_control(
      * 2. Once reached, sleep for the time needed to drain the excess above threshold.
      *    Sleep again while the estimate stays above the threshold, for example
      *    because a new flow control packet shows a fuller buffer than expected.
-     * 3. Wake immediately if a new flow control packet reports nearly_empty, underflow,
-     *    empty, or fill below max_buffer_fill_pct.
+     * 3. Wake early when a new flow control packet arrives, and compute the sleep
+     *    again from the level that it reports.
      */
     gr::thread::scoped_lock lock(m_fc_mutex);
     update_estimated_fill(std::chrono::steady_clock::now());
@@ -463,8 +458,10 @@ void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::wait_rate_control(
              * packet does not fit yet, so the wait would end at once, on every
              * pass of the loop.
              *
-             * A report of an empty buffer still ends the wait, because the
-             * receive thread resets the estimate to zero and wakes this thread.
+             * The receive thread wakes this thread on every report. The loop
+             * then computes the sleep again from the new estimate. A report
+             * of an empty buffer ends the wait at once, because the packet
+             * then fits.
              */
             const uint64_t reports = m_fc_reports;
             m_fc_cv.wait_for(
