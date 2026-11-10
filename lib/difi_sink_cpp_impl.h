@@ -65,6 +65,11 @@ namespace gr {
         gr::thread::condition_variable m_fc_cv;
         std::atomic<bool> m_first_fc_received{false};
         difi::flow_control m_last_fc{};
+        /*
+         * Counts the flow control reports. A wait uses it to see if a new
+         * report arrived.
+         */
+        uint64_t m_fc_reports{0};
         double m_est_fill_bytes{0.0};
         std::chrono::steady_clock::time_point m_last_update_time{};
 

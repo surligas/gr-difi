@@ -70,14 +70,22 @@ public:
 };
 
 /*!
- * \brief A running flowgraph with a rate-controlled sink that sends to \p port.
+ * \brief A running flowgraph with a rate-controlled sink.
  *
  * The flowgraph stops when the object is destroyed.
  */
 class paced_sink
 {
 public:
-    explicit paced_sink(uint16_t port) : m_tb(gr::make_top_block("qa_sink_rate_control"))
+    /*!
+     * \brief Builds the flowgraph and starts it.
+     *
+     * \param port UDP port of the fake digitizer
+     * \param max_fill_pct target fill of the digitizer buffer, in percent of
+     *        its size
+     */
+    explicit paced_sink(uint16_t port, float max_fill_pct = MAX_FILL_PCT)
+        : m_tb(gr::make_top_block("qa_sink_rate_control"))
     {
         auto src = gnuradio::make_block_sptr<zero_source>();
         // The context interval is large, so that the sink sends mostly data
@@ -103,7 +111,7 @@ public:
                                                               difi::reference_point::if_converter,
                                                               difi::tsi_type::utc,
                                                               true,
-                                                              MAX_FILL_PCT,
+                                                              max_fill_pct,
                                                               1.0f);
         m_tb->connect(src, 0, snk, 0);
         m_tb->start();
@@ -148,12 +156,18 @@ std::string report(uint16_t level, bool nearly_empty)
  *
  * The receive buffer of the peer is smaller than a data packet, so the size
  * comes from the packet header and not from the length of the datagram.
+ *
+ * A receive can block past \p deadline while the sink sends nothing, so a
+ * packet that arrives after the deadline does not count.
  */
 size_t data_bytes_until(peer& digitizer, std::chrono::steady_clock::time_point deadline)
 {
     size_t total = 0;
     while (std::chrono::steady_clock::now() < deadline) {
         std::string pkt = digitizer.recv();
+        if (std::chrono::steady_clock::now() >= deadline) {
+            break;
+        }
         if (pkt.size() < sizeof(uint32_t)) {
             continue;
         }
@@ -253,4 +267,55 @@ BOOST_AUTO_TEST_CASE(t_stops_during_a_long_pacing_wait)
     std::this_thread::sleep_for(200ms);
 
     BOOST_CHECK(stops_within(sink, digitizer, 1000ms));
+}
+
+/*
+ * A report can show a fuller buffer than the sink expects, for example when the
+ * digitizer transmits slower than the configured sample rate. The sink must
+ * then wait until the excess is transmitted, and only then send again.
+ */
+BOOST_AUTO_TEST_CASE(t_fuller_report_makes_the_sink_wait)
+{
+    uint16_t port = free_port();
+    peer digitizer(port);
+    paced_sink sink(port);
+
+    BOOST_REQUIRE(!digitizer.recv().empty());
+    digitizer.reply(report(0, true));
+
+    // Let the sink fill the buffer up to the target and start pacing.
+    data_bytes_until(digitizer, std::chrono::steady_clock::now() + 300ms);
+
+    // Level 31 is about 3 MB. The excess of about 2 MB above the target takes
+    // about 0.5 s to transmit.
+    digitizer.reply(report(31, false));
+    const auto start = std::chrono::steady_clock::now();
+
+    // Only packets that the sink sent before it received the report may arrive.
+    BOOST_CHECK_LE(data_bytes_until(digitizer, start + 300ms), 3 * PAYLOAD_BYTES);
+    BOOST_CHECK_GT(data_bytes_until(digitizer, start + 1000ms), 0U);
+}
+
+/*
+ * With a target smaller than one packet, there is never room for a packet below
+ * the target. The sink must still send close to the rate at which the digitizer
+ * transmits.
+ */
+BOOST_AUTO_TEST_CASE(t_small_target_sends_close_to_real_time)
+{
+    uint16_t port = free_port();
+    peer digitizer(port);
+    paced_sink sink(port, 0.0f);
+
+    BOOST_REQUIRE(!digitizer.recv().empty());
+    digitizer.reply(report(0, true));
+    const auto start = std::chrono::steady_clock::now();
+
+    size_t sent = data_bytes_until(digitizer, start + 500ms);
+    const double expected = DRAIN_BYTES_PER_SEC * seconds_since(start);
+
+    // Each sleep ends a little late. With no margin in the buffer, the sink
+    // cannot make up for that time, so it sends slightly less than expected.
+    BOOST_CHECK_GE(sent, 0.75 * expected);
+    BOOST_CHECK_LE(sent, expected + PAYLOAD_BYTES);
 }

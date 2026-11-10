@@ -275,6 +275,7 @@ void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::rx_loop()
                     gr::thread::scoped_lock lock(m_fc_mutex);
                     bool first = !m_first_fc_received.load();
                     m_last_fc = *fc_opt;
+                    m_fc_reports++;
                     m_last_update_time = std::chrono::steady_clock::now();
 
                     if (fc_opt->underflow || fc_opt->nearly_empty ||
@@ -413,11 +414,15 @@ void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::wait_rate_control(
         return;
     }
 
-    // Rate limiting pacing:
-    // 1. Push samples until estimated or reported fill reaches max_buffer_fill_pct.
-    // 2. Once reached, sleep for the time needed to drain the excess above threshold.
-    // 3. Wake immediately if a new flow control packet reports nearly_empty, underflow,
-    //    empty, or fill below max_buffer_fill_pct.
+    /*
+     * Rate limiting pacing:
+     * 1. Push samples until estimated or reported fill reaches max_buffer_fill_pct.
+     * 2. Once reached, sleep for the time needed to drain the excess above threshold.
+     *    Sleep again while the estimate stays above the threshold, for example
+     *    because a new flow control packet shows a fuller buffer than expected.
+     * 3. Wake immediately if a new flow control packet reports nearly_empty, underflow,
+     *    empty, or fill below max_buffer_fill_pct.
+     */
     gr::thread::scoped_lock lock(m_fc_mutex);
     update_estimated_fill(std::chrono::steady_clock::now());
 
@@ -431,27 +436,45 @@ void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::wait_rate_control(
         double max_fill_bytes =
             static_cast<double>(m_last_fc.buffer_size) * (max_pct / 100.0);
 
-        if (m_est_fill_bytes >= max_fill_bytes) {
-            double bytes_to_drain = (m_est_fill_bytes - max_fill_bytes) + pkt_bytes;
+        /*
+         * The packet fits below the target once the estimate drops to this
+         * level. It must not be negative: the estimate never drops below
+         * zero, so with a target smaller than one packet the sink would wait
+         * too long for every packet and send slower than real time.
+         */
+        const double room_bytes = std::max(0.0, max_fill_bytes - pkt_bytes);
+
+        while (m_est_fill_bytes > room_bytes) {
             uint64_t sleep_ns = static_cast<uint64_t>(
-                (bytes_to_drain / drain_rate_Bps) * 1000000000.0);
-            if (sleep_ns > 0) {
-                // Do not test the flags of the last report here. They stay set
-                // until the next report arrives, even after the sink has filled
-                // the buffer, so the sink would keep sending at full speed. A
-                // new report of an empty buffer still ends the wait at once:
-                // the receive thread resets the estimate to zero, so the sink
-                // sends the target fill without waiting.
-                m_fc_cv.wait_for(
-                    lock, boost::chrono::nanoseconds(sleep_ns), [this, max_fill_bytes]() {
-                        return !m_rx_running.load() || !m_rate_control.load() ||
-                               m_est_fill_bytes < max_fill_bytes;
-                    });
-                update_estimated_fill(std::chrono::steady_clock::now());
-                if (m_est_fill_bytes > max_fill_bytes - pkt_bytes) {
-                    m_est_fill_bytes = std::max(0.0, max_fill_bytes - pkt_bytes);
-                }
+                ((m_est_fill_bytes - room_bytes) / drain_rate_Bps) * 1000000000.0);
+            /*
+             * End the wait early only when a new report arrives.
+             *
+             * Do not test the flags of the last report: they stay set until
+             * the next report, so the sink would keep sending at full speed.
+             *
+             * Do not test the estimate: it can be below the target while the
+             * packet does not fit yet, so the wait would end at once, on every
+             * pass of the loop.
+             *
+             * A report of an empty buffer still ends the wait, because the
+             * receive thread resets the estimate to zero and wakes this thread.
+             */
+            const uint64_t reports = m_fc_reports;
+            m_fc_cv.wait_for(
+                lock, boost::chrono::nanoseconds(sleep_ns), [this, reports]() {
+                    return !m_rx_running.load() || !m_rate_control.load() ||
+                           m_fc_reports != reports;
+                });
+            if (!m_rx_running.load() || !m_rate_control.load()) {
+                return;
             }
+            /*
+             * Do not lower the estimate to make room for the packet. A report
+             * that arrived during the wait may show a fuller buffer than
+             * expected, and the sink must then wait again.
+             */
+            update_estimated_fill(std::chrono::steady_clock::now());
         }
 
         m_est_fill_bytes += pkt_bytes;
