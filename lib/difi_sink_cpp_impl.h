@@ -44,8 +44,9 @@ namespace gr {
         void start_rx_thread();
         void stop_rx_thread();
         void wait_rate_control(uint32_t num_samples);
-        void update_estimated_fill(std::chrono::steady_clock::time_point now);
-        void check_and_publish_flow_control(const difi::flow_control& fc);
+        double drain_rate_bytes() const;
+        void update_fill_state(const difi::flow_control& fc);
+        void wake_rate_control();
         void update_class_id(bool rate_control_enabled);
 
         difi::context<V> m_context;
@@ -56,7 +57,6 @@ namespace gr {
         std::unique_ptr<Transport> m_transport;
 
         std::atomic<bool> m_rate_control{false};
-        std::atomic<float> m_max_buffer_fill_pct{50.0f};
         std::thread m_rx_thread;
         std::atomic<bool> m_rx_running{false};
         // GNU Radio stops a flowgraph by interrupting the threads of its
@@ -67,22 +67,22 @@ namespace gr {
         std::atomic<bool> m_first_fc_received{false};
         difi::flow_control m_last_fc{};
         /*
-         * Counts the flow control reports. A wait uses it to see if a new
-         * report arrived.
+         * True while the sink sends, false while it waits for the digitizer
+         * to play out the samples. The receive thread changes it when a
+         * report arrives, so that work() does not miss a report when two
+         * reports arrive close together.
          */
-        uint64_t m_fc_reports{0};
-        double m_est_fill_bytes{0.0};
-        std::chrono::steady_clock::time_point m_last_update_time{};
+        bool m_filling{true};
+        /*
+         * False during startup. It becomes true when a report shows more than
+         * s_fill_seconds of samples in the buffer, or has the nearly full flag
+         * set. An underflow makes it false again. See update_fill_state().
+         */
+        bool m_started{false};
+        /* The underflow flag of the previous report. */
+        bool m_underflow{false};
         /* The earliest time at which the next packet may be sent. */
         std::chrono::steady_clock::time_point m_next_send_time{};
-
-        std::atomic<float> m_buffer_fill_delta{1.0f};
-        bool m_fc_published{false};
-        float m_last_published_pct{0.0f};
-        bool m_last_published_overflow{false};
-        bool m_last_published_nearly_full{false};
-        bool m_last_published_nearly_empty{false};
-        bool m_last_published_underflow{false};
 
         static constexpr uint32_t s_bytes_per_sample = sizeof(sample_t);
         static constexpr int s_bit_depth_val = static_cast<int>(BitDepth);
@@ -91,10 +91,17 @@ namespace gr {
          * With rate control, the sink never sends faster than this multiple of
          * real time. Bursts at full line rate can lose packets on the way to
          * the digitizer. At twice real time, the buffer gains samples as fast
-         * as the digitizer transmits them. An empty buffer then reaches a
-         * target of N seconds of samples in about N seconds.
+         * as the digitizer transmits them. An empty buffer then holds
+         * s_fill_seconds of samples after about s_fill_seconds.
          */
         static constexpr double s_max_rate_factor = 2.0;
+
+        /*
+         * The digitizer transmits nothing until its buffer holds about 2
+         * seconds of samples. At startup, the sink sends until the digitizer
+         * reports more than this many seconds of samples in its buffer.
+         */
+        static constexpr double s_fill_seconds = 2.0;
 
         /*
          * How far the planned send time may fall behind the clock. It must be
@@ -133,9 +140,7 @@ namespace gr {
                         double if_band_offset = 0.0,
                         difi::reference_point ref_point = difi::reference_point::if_converter,
                         difi::tsi_type time_source = difi::tsi_type::posix,
-                        bool rate_control = false,
-                        float max_buffer_fill_pct = 50.0f,
-                        float buffer_fill_delta = 1.0f);
+                        bool rate_control = false);
       ~difi_sink_cpp_impl() override;
 
       bool start() override;
@@ -264,20 +269,11 @@ namespace gr {
           if (enabled) {
               start_rx_thread();
           } else {
+              wake_rate_control();
               stop_rx_thread();
           }
       }
       bool rate_control() const override { return m_rate_control.load(); }
-
-      void set_max_buffer_fill_pct(float pct) override
-      {
-          m_max_buffer_fill_pct.store(pct);
-          m_fc_cv.notify_all();
-      }
-      float max_buffer_fill_pct() const override { return m_max_buffer_fill_pct.load(); }
-
-      void set_buffer_fill_delta(float delta) override { m_buffer_fill_delta.store(delta); }
-      float buffer_fill_delta() const override { return m_buffer_fill_delta.load(); }
 
       float last_buffer_fill_pct() const override
       {

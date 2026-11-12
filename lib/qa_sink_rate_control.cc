@@ -40,9 +40,12 @@ constexpr double DRAIN_BYTES_PER_SEC = SAMP_RATE * sizeof(std::complex<int16_t>)
 /* Close to the buffer size that the real digitizer reports. */
 constexpr uint64_t BUFFER_SIZE = 400'000'000;
 
-/* 1 MB, a quarter of a second of samples. */
-constexpr float MAX_FILL_PCT = 0.25f;
-constexpr double TARGET_FILL_BYTES = BUFFER_SIZE * MAX_FILL_PCT / 100.0;
+/*
+ * Buffer levels, from 0 (empty) to 4095 (full). At startup, the sink stops
+ * sending above 2 seconds of samples, which is 8 MB or a level of about 82.
+ */
+constexpr uint16_t LEVEL_1_SECOND = 41;
+constexpr uint16_t LEVEL_3_SECONDS = 123;
 
 /*!
  * \brief Produces zero samples as fast as the scheduler asks for them.
@@ -81,39 +84,34 @@ public:
      * \brief Builds the flowgraph and starts it.
      *
      * \param port UDP port of the fake digitizer
-     * \param max_fill_pct target fill of the digitizer buffer, in percent of
-     *        its size
      */
-    explicit paced_sink(uint16_t port, float max_fill_pct = MAX_FILL_PCT)
-        : m_tb(gr::make_top_block("qa_sink_rate_control"))
+    explicit paced_sink(uint16_t port) : m_tb(gr::make_top_block("qa_sink_rate_control"))
     {
         auto src = gnuradio::make_block_sptr<zero_source>();
         // The context interval is large, so that the sink sends mostly data
         // packets after the handshake.
-        auto snk = difi_sink_cpp<difi::context_version::standard,
-                                 udp_client,
-                                 difi::bit_depth::bits_16,
-                                 difi::byte_order::big>::make(LOOPBACK,
-                                                              port,
-                                                              SAMP_RATE,
-                                                              SAMPLES_PER_PACKET,
-                                                              0,
-                                                              1000000,
-                                                              "",
-                                                              10000,
-                                                              0.0,
-                                                              0.0,
-                                                              0.0,
-                                                              0.0f,
-                                                              0.0f,
-                                                              0.0f,
-                                                              0.0,
-                                                              difi::reference_point::if_converter,
-                                                              difi::tsi_type::utc,
-                                                              true,
-                                                              max_fill_pct,
-                                                              1.0f);
-        m_tb->connect(src, 0, snk, 0);
+        m_sink = difi_sink_cpp<difi::context_version::standard,
+                               udp_client,
+                               difi::bit_depth::bits_16,
+                               difi::byte_order::big>::make(LOOPBACK,
+                                                            port,
+                                                            SAMP_RATE,
+                                                            SAMPLES_PER_PACKET,
+                                                            0,
+                                                            1000000,
+                                                            "",
+                                                            10000,
+                                                            0.0,
+                                                            0.0,
+                                                            0.0,
+                                                            0.0f,
+                                                            0.0f,
+                                                            0.0f,
+                                                            0.0,
+                                                            difi::reference_point::if_converter,
+                                                            difi::tsi_type::utc,
+                                                            true);
+        m_tb->connect(src, 0, m_sink, 0);
         m_tb->start();
     }
 
@@ -126,11 +124,15 @@ public:
         m_tb->wait();
     }
 
+    /*! \brief The sink block, for calls while the flowgraph runs. */
+    difi_sink_base& sink() { return *m_sink; }
+
     paced_sink(const paced_sink&) = delete;
     paced_sink& operator=(const paced_sink&) = delete;
 
 private:
     gr::top_block_sptr m_tb;
+    difi_sink_base::sptr m_sink;
 };
 
 /*!
@@ -138,14 +140,19 @@ private:
  *
  * \param level buffer level, from 0 (empty) to 4095 (full)
  * \param nearly_empty true if the report says that the buffer is nearly empty
+ * \param nearly_full true if the report says that the buffer is nearly full
  * \param underflow true if the report says that the buffer had an underflow
  */
-std::string report(uint16_t level, bool nearly_empty, bool underflow = false)
+std::string report(uint16_t level,
+                   bool nearly_empty,
+                   bool nearly_full = false,
+                   bool underflow = false)
 {
     difi::flow_control fc;
     fc.buffer_size = BUFFER_SIZE;
     fc.buffer_level = level;
     fc.nearly_empty = nearly_empty;
+    fc.nearly_full = nearly_full;
     fc.underflow = underflow;
     fc.sample_rate = SAMP_RATE;
     auto raw = difi::pack_flow_control(fc);
@@ -160,7 +167,9 @@ std::string report(uint16_t level, bool nearly_empty, bool underflow = false)
  * comes from the packet header and not from the length of the datagram.
  *
  * A receive can block past \p deadline while the sink sends nothing, so a
- * packet that arrives after the deadline does not count.
+ * packet that arrives after the deadline does not count. This also means that
+ * a call returns only after the receive timeout of the peer (2 s) when the
+ * sink is silent.
  */
 size_t data_bytes_until(peer& digitizer, std::chrono::steady_clock::time_point deadline)
 {
@@ -183,6 +192,12 @@ size_t data_bytes_until(peer& digitizer, std::chrono::steady_clock::time_point d
     return total;
 }
 
+/*! \brief Counts the payload bytes that arrive within \p window from now. */
+size_t data_bytes_within(peer& digitizer, std::chrono::milliseconds window)
+{
+    return data_bytes_until(digitizer, std::chrono::steady_clock::now() + window);
+}
+
 /*! \brief Seconds elapsed since \p start. */
 double seconds_since(std::chrono::steady_clock::time_point start)
 {
@@ -193,7 +208,7 @@ double seconds_since(std::chrono::steady_clock::time_point start)
  * \brief Stops the flowgraph of \p sink and tells whether it stopped within
  * \p limit.
  *
- * If it takes longer, the fake digitizer sends an empty buffer report. This
+ * If it takes longer, the fake digitizer sends a nearly empty report. This
  * ends any wait of the sink, so the flowgraph still stops and a failing test
  * does not hang.
  */
@@ -211,11 +226,11 @@ bool stops_within(paced_sink& sink, peer& digitizer, std::chrono::milliseconds l
 } // namespace
 
 /*
- * An idle digitizer reports an empty buffer. The sink may then fill the buffer
- * up to the target, but after that it must send only as fast as the digitizer
- * plays the samples out, even if no new report arrives.
+ * While the sink fills the buffer, it must not send faster than twice real time.
+ * It must not send much slower either, because sleeps that end late must not
+ * lower the rate. It must keep sending even if no new report arrives.
  */
-BOOST_AUTO_TEST_CASE(t_empty_report_releases_only_the_target_fill)
+BOOST_AUTO_TEST_CASE(t_fills_at_twice_real_time)
 {
     uint16_t port = free_port();
     peer digitizer(port);
@@ -226,23 +241,22 @@ BOOST_AUTO_TEST_CASE(t_empty_report_releases_only_the_target_fill)
     digitizer.reply(report(0, true));
     const auto start = std::chrono::steady_clock::now();
 
+    // At twice real time, the sink needs about 1 s to send 2 seconds of
+    // samples. This window ends before that.
     size_t sent = data_bytes_until(digitizer, start + 300ms);
-    const double elapsed = seconds_since(start);
+    const double limit = 2 * DRAIN_BYTES_PER_SEC * seconds_since(start);
 
-    // A few packets of margin cover the packet that crosses the target, plus
-    // some slack for timing.
-    const double allowed =
-        TARGET_FILL_BYTES + DRAIN_BYTES_PER_SEC * elapsed + 4 * PAYLOAD_BYTES;
-    BOOST_CHECK_GE(sent, TARGET_FILL_BYTES);
-    BOOST_CHECK_LE(sent, allowed);
+    // The margin covers the few packets that the sink sends at once at the
+    // start, because its planned send time starts up to 1 ms in the past.
+    BOOST_CHECK_LE(sent, limit + 4 * PAYLOAD_BYTES);
+    BOOST_CHECK_GE(sent, 0.75 * limit);
 }
 
 /*
- * While the sink fills an empty buffer up to the target, it must not send faster
- * than twice real time. It must not send much slower either, because sleeps that
- * end late must not lower the rate.
+ * At startup, a report of more than 2 seconds of samples in the buffer stops
+ * the sink.
  */
-BOOST_AUTO_TEST_CASE(t_refill_is_limited_to_twice_real_time)
+BOOST_AUTO_TEST_CASE(t_report_above_two_seconds_stops_sending)
 {
     uint16_t port = free_port();
     peer digitizer(port);
@@ -250,17 +264,141 @@ BOOST_AUTO_TEST_CASE(t_refill_is_limited_to_twice_real_time)
 
     BOOST_REQUIRE(!digitizer.recv().empty());
     digitizer.reply(report(0, true));
-    const auto start = std::chrono::steady_clock::now();
+    BOOST_REQUIRE_GT(data_bytes_within(digitizer, 100ms), 0U);
 
-    // At twice real time, the buffer needs about 0.25 s to reach the target.
-    // This window ends before that, so only the rate limit applies.
-    size_t sent = data_bytes_until(digitizer, start + 100ms);
-    const double limit = 2 * DRAIN_BYTES_PER_SEC * seconds_since(start);
+    digitizer.reply(report(LEVEL_3_SECONDS, false));
 
-    // The margin covers the few packets that the sink sends at once at the
-    // start, because its planned send time starts up to 1 ms in the past.
-    BOOST_CHECK_LE(sent, limit + 4 * PAYLOAD_BYTES);
-    BOOST_CHECK_GE(sent, 0.75 * limit);
+    // Only packets that the sink sent before it received the report may arrive.
+    BOOST_CHECK_LE(data_bytes_within(digitizer, 100ms), 4 * PAYLOAD_BYTES);
+    BOOST_CHECK_EQUAL(data_bytes_within(digitizer, 300ms), 0U);
+}
+
+/*
+ * At startup, a nearly full report stops the sink, even below 2 seconds of
+ * samples. This covers a buffer that is too small to hold 2 seconds of samples.
+ */
+BOOST_AUTO_TEST_CASE(t_nearly_full_report_stops_sending)
+{
+    uint16_t port = free_port();
+    peer digitizer(port);
+    paced_sink sink(port);
+
+    BOOST_REQUIRE(!digitizer.recv().empty());
+    digitizer.reply(report(0, true));
+    BOOST_REQUIRE_GT(data_bytes_within(digitizer, 100ms), 0U);
+
+    digitizer.reply(report(LEVEL_1_SECOND, false, true));
+
+    BOOST_CHECK_LE(data_bytes_within(digitizer, 100ms), 4 * PAYLOAD_BYTES);
+    BOOST_CHECK_EQUAL(data_bytes_within(digitizer, 300ms), 0U);
+}
+
+/*
+ * Once stopped, the sink waits for a nearly empty report. A lower level alone
+ * must not restart it.
+ */
+BOOST_AUTO_TEST_CASE(t_only_nearly_empty_restarts_sending)
+{
+    uint16_t port = free_port();
+    peer digitizer(port);
+    paced_sink sink(port);
+
+    BOOST_REQUIRE(!digitizer.recv().empty());
+    // The first report already shows more than 2 seconds of samples, so the
+    // sink must send no data at all.
+    digitizer.reply(report(LEVEL_3_SECONDS, false));
+    BOOST_CHECK_EQUAL(data_bytes_within(digitizer, 300ms), 0U);
+
+    digitizer.reply(report(LEVEL_1_SECOND, false));
+    BOOST_CHECK_EQUAL(data_bytes_within(digitizer, 300ms), 0U);
+
+    digitizer.reply(report(LEVEL_1_SECOND, true));
+    BOOST_CHECK_GT(data_bytes_within(digitizer, 300ms), 0U);
+}
+
+/*
+ * After startup, the sink sends only while the reports say that the buffer is
+ * nearly empty. It must stop as soon as the flag clears, even far below 2
+ * seconds of samples. This keeps the delay of the samples low.
+ */
+BOOST_AUTO_TEST_CASE(t_cleared_nearly_empty_stops_sending)
+{
+    uint16_t port = free_port();
+    peer digitizer(port);
+    paced_sink sink(port);
+
+    BOOST_REQUIRE(!digitizer.recv().empty());
+    // End the startup at once.
+    digitizer.reply(report(LEVEL_3_SECONDS, false));
+    BOOST_CHECK_EQUAL(data_bytes_within(digitizer, 300ms), 0U);
+
+    digitizer.reply(report(1, true));
+    BOOST_REQUIRE_GT(data_bytes_within(digitizer, 100ms), 0U);
+
+    digitizer.reply(report(LEVEL_1_SECOND, false));
+
+    // Only packets that the sink sent before it received the report may arrive.
+    BOOST_CHECK_LE(data_bytes_within(digitizer, 100ms), 4 * PAYLOAD_BYTES);
+    BOOST_CHECK_EQUAL(data_bytes_within(digitizer, 300ms), 0U);
+}
+
+/*
+ * After an underflow, the digitizer again waits for 2 seconds of samples. The
+ * sink must start the startup again and keep sending until the buffer holds
+ * them, even when the nearly empty flag clears on the way.
+ */
+BOOST_AUTO_TEST_CASE(t_underflow_starts_the_startup_again)
+{
+    uint16_t port = free_port();
+    peer digitizer(port);
+    paced_sink sink(port);
+
+    BOOST_REQUIRE(!digitizer.recv().empty());
+    // End the startup at once.
+    digitizer.reply(report(LEVEL_3_SECONDS, false));
+    BOOST_CHECK_EQUAL(data_bytes_within(digitizer, 300ms), 0U);
+
+    digitizer.reply(report(0, true, false, true));
+    BOOST_REQUIRE_GT(data_bytes_within(digitizer, 100ms), 0U);
+
+    // Below 2 seconds, without the nearly empty flag. After the startup this
+    // would stop the sink.
+    digitizer.reply(report(LEVEL_1_SECOND, false));
+    data_bytes_within(digitizer, 50ms);
+    BOOST_CHECK_GT(data_bytes_within(digitizer, 200ms), 0U);
+
+    digitizer.reply(report(LEVEL_3_SECONDS, false));
+    BOOST_CHECK_LE(data_bytes_within(digitizer, 100ms), 4 * PAYLOAD_BYTES);
+    BOOST_CHECK_EQUAL(data_bytes_within(digitizer, 300ms), 0U);
+}
+
+/*
+ * The digitizer may keep the underflow flag set in the reports that follow an
+ * underflow. Only the first of them starts the startup again. Otherwise the
+ * sink would keep the buffer at 2 seconds of samples.
+ */
+BOOST_AUTO_TEST_CASE(t_underflow_flag_that_stays_set_starts_the_startup_once)
+{
+    uint16_t port = free_port();
+    peer digitizer(port);
+    paced_sink sink(port);
+
+    BOOST_REQUIRE(!digitizer.recv().empty());
+    digitizer.reply(report(LEVEL_3_SECONDS, false));
+    BOOST_CHECK_EQUAL(data_bytes_within(digitizer, 300ms), 0U);
+
+    digitizer.reply(report(0, true, false, true));
+    BOOST_REQUIRE_GT(data_bytes_within(digitizer, 100ms), 0U);
+
+    // The startup ends, while the flag stays set.
+    digitizer.reply(report(LEVEL_3_SECONDS, false, false, true));
+    BOOST_CHECK_LE(data_bytes_within(digitizer, 100ms), 4 * PAYLOAD_BYTES);
+    BOOST_CHECK_EQUAL(data_bytes_within(digitizer, 300ms), 0U);
+
+    // The flag is still set, but this is the same underflow, so the sink
+    // keeps waiting for a nearly empty report.
+    digitizer.reply(report(LEVEL_1_SECOND, false, false, true));
+    BOOST_CHECK_EQUAL(data_bytes_within(digitizer, 300ms), 0U);
 }
 
 /*
@@ -280,118 +418,36 @@ BOOST_AUTO_TEST_CASE(t_stops_while_waiting_for_the_first_report)
 }
 
 /*
- * A report of a full buffer makes the sink wait until the digitizer has
- * transmitted the excess samples, which here takes about 100 s. Stopping the
- * flowgraph must not wait for that.
+ * The wait for a nearly empty report has no time limit. Stopping the
+ * flowgraph must still end it.
  */
-BOOST_AUTO_TEST_CASE(t_stops_during_a_long_pacing_wait)
+BOOST_AUTO_TEST_CASE(t_stops_while_waiting_for_nearly_empty)
 {
     uint16_t port = free_port();
     peer digitizer(port);
     paced_sink sink(port);
 
     BOOST_REQUIRE(!digitizer.recv().empty());
-    digitizer.reply(report(4095, false));
+    digitizer.reply(report(LEVEL_3_SECONDS, false));
     std::this_thread::sleep_for(200ms);
 
     BOOST_CHECK(stops_within(sink, digitizer, 1000ms));
 }
 
 /*
- * A report can show a fuller buffer than the sink expects, for example when the
- * digitizer transmits slower than the configured sample rate. The sink must
- * then wait until the excess is transmitted, and only then send again.
+ * Disabling rate control while the sink waits for a nearly empty report must
+ * end the wait, so that the sink sends again.
  */
-BOOST_AUTO_TEST_CASE(t_fuller_report_makes_the_sink_wait)
+BOOST_AUTO_TEST_CASE(t_disabling_rate_control_ends_the_wait)
 {
     uint16_t port = free_port();
     peer digitizer(port);
     paced_sink sink(port);
 
     BOOST_REQUIRE(!digitizer.recv().empty());
-    digitizer.reply(report(0, true));
-
-    // Let the sink fill the buffer up to the target and start pacing.
-    data_bytes_until(digitizer, std::chrono::steady_clock::now() + 300ms);
-
-    // Level 31 is about 3 MB. The excess of about 2 MB above the target takes
-    // about 0.5 s to transmit.
-    digitizer.reply(report(31, false));
-    const auto start = std::chrono::steady_clock::now();
-
-    // Only packets that the sink sent before it received the report may arrive.
-    BOOST_CHECK_LE(data_bytes_until(digitizer, start + 300ms), 3 * PAYLOAD_BYTES);
-    BOOST_CHECK_GT(data_bytes_until(digitizer, start + 1000ms), 0U);
-}
-
-/*
- * A report can show that the buffer drained faster than the sink expects, while
- * it still holds more than the target. The sink must then shorten its wait.
- * Otherwise it sleeps for the whole time computed from the old level, and the
- * buffer can run empty.
- */
-BOOST_AUTO_TEST_CASE(t_emptier_report_shortens_the_wait)
-{
-    uint16_t port = free_port();
-    peer digitizer(port);
-    paced_sink sink(port);
-
-    BOOST_REQUIRE(!digitizer.recv().empty());
-    // The digitizer needs about 100 s to transmit a full buffer of 400 MB.
-    digitizer.reply(report(4095, false));
+    digitizer.reply(report(LEVEL_3_SECONDS, false));
     std::this_thread::sleep_for(200ms);
 
-    // Level 31 is about 3 MB, which is about 2 MB above the target. The
-    // digitizer needs about 0.5 s to transmit this excess.
-    digitizer.reply(report(31, false));
-    const auto start = std::chrono::steady_clock::now();
-
-    BOOST_CHECK_GT(data_bytes_until(digitizer, start + 1000ms), 0U);
-}
-
-/*
- * A digitizer may report a nearly empty buffer or an underflow while the level
- * is still above the target. The sink must trust the level and wait. It must
- * not send the target fill on top of the samples that are in the buffer.
- */
-BOOST_AUTO_TEST_CASE(t_nearly_empty_report_uses_the_level)
-{
-    uint16_t port = free_port();
-    peer digitizer(port);
-    paced_sink sink(port);
-
-    BOOST_REQUIRE(!digitizer.recv().empty());
-    // Level 31 is about 3 MB, which is about 2 MB above the target. The
-    // digitizer needs about 0.5 s to transmit this excess.
-    digitizer.reply(report(31, true, true));
-    const auto start = std::chrono::steady_clock::now();
-
-    // The sink sent no data before this first report, so it must send none
-    // until the excess is transmitted.
-    BOOST_CHECK_EQUAL(data_bytes_until(digitizer, start + 300ms), 0U);
-    BOOST_CHECK_GT(data_bytes_until(digitizer, start + 1000ms), 0U);
-}
-
-/*
- * With a target smaller than one packet, there is never room for a packet below
- * the target. The sink must still send close to the rate at which the digitizer
- * transmits.
- */
-BOOST_AUTO_TEST_CASE(t_small_target_sends_close_to_real_time)
-{
-    uint16_t port = free_port();
-    peer digitizer(port);
-    paced_sink sink(port, 0.0f);
-
-    BOOST_REQUIRE(!digitizer.recv().empty());
-    digitizer.reply(report(0, true));
-    const auto start = std::chrono::steady_clock::now();
-
-    size_t sent = data_bytes_until(digitizer, start + 500ms);
-    const double expected = DRAIN_BYTES_PER_SEC * seconds_since(start);
-
-    // Each sleep ends a little late. With no margin in the buffer, the sink
-    // cannot make up for that time, so it sends slightly less than expected.
-    BOOST_CHECK_GE(sent, 0.75 * expected);
-    BOOST_CHECK_LE(sent, expected + PAYLOAD_BYTES);
+    sink.sink().set_rate_control(false);
+    BOOST_CHECK_GT(data_bytes_within(digitizer, 300ms), 0U);
 }

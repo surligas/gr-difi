@@ -8,7 +8,7 @@ label: DIFI Sink
 category: '[DIFI]'
 templates:
   imports: import difi
-  make: difi.difi_sink_cpp_${ 'sc8' if bit_depth == '8' else 'sc16' }(${ip_addr}, ${port}, ${sample_rate}, ${data_size}, ${stream_id}, ${context_packet_send_count}, ${ '""' if mode == 'streaming' else length_tag_name }, int(${lead_time_us}), int(${context_pack_size}), int(${protocol}), float(${rf_freq}), float(${if_freq}), float(${bandwidth}), float(${rf_gain}), float(${if_gain}), float(${ref_level}), float(${if_band_offset}), int(${ref_point}), int(${time_source}), bool(${rate_control}), float(${max_buffer_fill_pct}), float(${buffer_fill_delta}), difi.byte_order.${byte_order})
+  make: difi.difi_sink_cpp_${ 'sc8' if bit_depth == '8' else 'sc16' }(${ip_addr}, ${port}, ${sample_rate}, ${data_size}, ${stream_id}, ${context_packet_send_count}, ${ '""' if mode == 'streaming' else length_tag_name }, int(${lead_time_us}), int(${context_pack_size}), int(${protocol}), float(${rf_freq}), float(${if_freq}), float(${bandwidth}), float(${rf_gain}), float(${if_gain}), float(${ref_level}), float(${if_band_offset}), int(${ref_point}), int(${time_source}), bool(${rate_control}), difi.byte_order.${byte_order})
   callbacks:
   - set_rf_freq(${rf_freq})
   - set_if_freq(${if_freq})
@@ -20,8 +20,6 @@ templates:
   - set_ref_point(difi.reference_point(${ref_point}))
   - set_time_source(difi.tsi_type(${time_source}))
   - set_rate_control(${rate_control})
-  - set_max_buffer_fill_pct(${max_buffer_fill_pct})
-  - set_buffer_fill_delta(${buffer_fill_delta})
 
 parameters:
 - id: bit_depth
@@ -112,18 +110,6 @@ parameters:
   options: ['False', 'True']
   option_labels: ['Disabled', 'Enabled']
   default: 'False'
-- id: max_buffer_fill_pct
-  label: Max Buffer Fill (%)
-  category: Time
-  dtype: float
-  default: '50.0'
-  hide: ${ ('none' if rate_control == 'True' else 'all') }
-- id: buffer_fill_delta
-  label: Buffer Fill Delta (%)
-  category: Time
-  dtype: float
-  default: '1.0'
-  hide: part
 
 # RF Options Tab
 - id: rf_freq
@@ -209,5 +195,14 @@ documentation: |-
      Modes:
      - Streaming: Continuous streaming of samples. Length tag name is empty.
      - Burst: Transmit bursts defined by length tags (e.g., packet_len). Samples outside bursts are dropped.
+
+     Rate control:
+     - The sink follows the flow control reports of the digitizer.
+     - It sends context packets until the first report arrives.
+     - It never sends faster than twice real time.
+     - At startup, it sends until a report shows more than 2 seconds of samples in the buffer, or has the nearly full flag set. The digitizer transmits nothing before that.
+     - After that, it sends only while the reports have the nearly empty flag set. This keeps the delay of the samples low.
+     - An underflow starts the startup again.
+     - Every report and every received context packet is posted on the status port.
 
 file_format: 1

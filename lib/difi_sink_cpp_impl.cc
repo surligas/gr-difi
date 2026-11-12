@@ -41,9 +41,7 @@ difi_sink_cpp<V, Transport, BitDepth, ByteOrder>::make(std::string ip_addr,
                                                        double if_band_offset,
                                                        difi::reference_point ref_point,
                                                        difi::tsi_type time_source,
-                                                       bool rate_control,
-                                                       float max_buffer_fill_pct,
-                                                       float buffer_fill_delta)
+                                                       bool rate_control)
 {
     return gnuradio::make_block_sptr<
         difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>>(ip_addr,
@@ -63,9 +61,7 @@ difi_sink_cpp<V, Transport, BitDepth, ByteOrder>::make(std::string ip_addr,
                                                                if_band_offset,
                                                                ref_point,
                                                                time_source,
-                                                               rate_control,
-                                                               max_buffer_fill_pct,
-                                                               buffer_fill_delta);
+                                                               rate_control);
 }
 
 template <difi::context_version V,
@@ -91,9 +87,7 @@ difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::difi_sink_cpp_impl(
     double if_band_offset,
     difi::reference_point ref_point,
     difi::tsi_type time_source,
-    bool rate_control,
-    float max_buffer_fill_pct,
-    float buffer_fill_delta)
+    bool rate_control)
     : gr::sync_block("difi_sink_cpp_impl",
                      gr::io_signature::make(1, 1, sizeof(sample_t)),
                      gr::io_signature::make(0, 0, 0)),
@@ -106,11 +100,8 @@ difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::difi_sink_cpp_impl(
       d_contex_packet_interval(context_interval)
 {
     m_rate_control.store(rate_control);
-    m_max_buffer_fill_pct.store(max_buffer_fill_pct);
-    m_buffer_fill_delta.store(buffer_fill_delta);
     m_first_fc_received.store(false);
     m_rx_running.store(false);
-    m_fc_published = false;
 
     this->message_port_register_out(pmt::intern("status"));
 
@@ -201,11 +192,11 @@ bool difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::start()
     if (m_rate_control.load()) {
         {
             gr::thread::scoped_lock lock(m_fc_mutex);
-            m_est_fill_bytes = 0.0;
-            m_last_update_time = std::chrono::steady_clock::now();
+            m_filling = true;
+            m_started = false;
+            m_underflow = false;
         }
         m_first_fc_received.store(false);
-        m_fc_published = false;
         start_rx_thread();
     }
     return gr::sync_block::start();
@@ -242,7 +233,7 @@ requires valid_bit_depth<BitDepth>
 void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::stop_rx_thread()
 {
     if (m_rx_running.exchange(false)) {
-        m_fc_cv.notify_all();
+        wake_rate_control();
         if (m_rx_thread.joinable()) {
             m_rx_thread.join();
         }
@@ -273,33 +264,12 @@ void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::rx_loop()
                 {
                     gr::thread::scoped_lock lock(m_fc_mutex);
                     m_last_fc = *fc_opt;
-                    m_fc_reports++;
-                    m_last_update_time = std::chrono::steady_clock::now();
-
-                    /*
-                     * Take the estimate from the level, even when the report
-                     * says that the buffer is nearly empty or had an underflow.
-                     * The digitizer may set these flags while the level is
-                     * still above the target. An estimate of zero would make
-                     * the sink send the whole target fill on top of the
-                     * samples that are already in the buffer.
-                     */
-                    if (fc_opt->buffer_size > 0) {
-                        m_est_fill_bytes =
-                            static_cast<double>(fc_opt->buffer_size) *
-                            (static_cast<double>(fc_opt->buffer_level) / 4095.0);
-                    }
+                    update_fill_state(*fc_opt);
                     m_first_fc_received.store(true);
                 }
-                /*
-                 * Wake the pacing wait on every report, even when the buffer
-                 * is still above the target. The wait computes its sleep from
-                 * the estimate it had when it started. If the buffer drained
-                 * faster than expected, the sink would sleep too long and the
-                 * buffer could run empty.
-                 */
                 m_fc_cv.notify_all();
-                check_and_publish_flow_control(*fc_opt);
+                this->message_port_pub(pmt::intern("status"),
+                                       difi::flow_control_to_pmt(*fc_opt));
             }
             break;
         }
@@ -321,67 +291,112 @@ void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::rx_loop()
     }
 }
 
+/**
+ * @brief Returns the rate at which the digitizer plays out samples, in bytes
+ * per second.
+ *
+ * It uses the configured sample rate, or the one of the last report if none
+ * was configured. The caller must hold m_fc_mutex.
+ *
+ * @return the rate in bytes per second, or 0 if no sample rate is known
+ */
 template <difi::context_version V,
           sink_transport Transport,
           difi::bit_depth BitDepth,
           difi::byte_order ByteOrder>
 requires valid_bit_depth<BitDepth>
-void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::
-    check_and_publish_flow_control(const difi::flow_control& fc)
+double difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::drain_rate_bytes() const
 {
-    bool should_publish = false;
-    float delta = m_buffer_fill_delta.load();
-    float pct = fc.buffer_fill_pct();
-
-    if (delta <= 0.0f) {
-        should_publish = true;
-    } else if (!m_fc_published) {
-        should_publish = true;
-    } else if (fc.overflow != m_last_published_overflow ||
-               fc.nearly_full != m_last_published_nearly_full ||
-               fc.nearly_empty != m_last_published_nearly_empty ||
-               fc.underflow != m_last_published_underflow) {
-        should_publish = true;
-    } else if (std::abs(pct - m_last_published_pct) >= delta) {
-        should_publish = true;
-    }
-
-    if (should_publish) {
-        m_fc_published = true;
-        m_last_published_pct = pct;
-        m_last_published_overflow = fc.overflow;
-        m_last_published_nearly_full = fc.nearly_full;
-        m_last_published_nearly_empty = fc.nearly_empty;
-        m_last_published_underflow = fc.underflow;
-
-        pmt::pmt_t msg = difi::flow_control_to_pmt(fc);
-        this->message_port_pub(pmt::intern("status"), msg);
-    }
+    const double samp_rate = (d_samp_rate > 0.0) ? d_samp_rate : m_last_fc.sample_rate;
+    return std::max(0.0, samp_rate) * s_bytes_per_sample;
 }
 
+/**
+ * @brief Decides from a flow control report whether the sink sends or waits.
+ *
+ * At startup, the sink sends until the report shows more than s_fill_seconds
+ * of samples in the buffer, because the digitizer transmits nothing before
+ * that. It also stops when the digitizer reports a nearly full buffer. This is
+ * needed when the buffer is smaller than s_fill_seconds of samples.
+ *
+ * After that, the sink sends only while the digitizer says that the buffer is
+ * nearly empty. This keeps the buffer close to the nearly empty level, so
+ * that the samples wait as little time as possible in the buffer. After
+ * startup, the sink ignores the level and looks only at the flag.
+ *
+ * After an underflow, the digitizer again waits for s_fill_seconds of samples
+ * before it transmits, so the startup begins again. Only the first report
+ * with the underflow flag set does this. The digitizer may keep the flag set
+ * in the next reports, and starting again on each of them would keep the
+ * buffer at s_fill_seconds of samples.
+ *
+ * The caller must hold m_fc_mutex.
+ *
+ * @param fc the report that has just arrived
+ */
 template <difi::context_version V,
           sink_transport Transport,
           difi::bit_depth BitDepth,
           difi::byte_order ByteOrder>
 requires valid_bit_depth<BitDepth>
-void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::update_estimated_fill(
-    std::chrono::steady_clock::time_point now)
+void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::update_fill_state(
+    const difi::flow_control& fc)
 {
-    if (m_last_update_time.time_since_epoch().count() > 0) {
-        double elapsed_s =
-            std::chrono::duration<double>(now - m_last_update_time).count();
-        if (elapsed_s > 0.0) {
-            double samp_rate =
-                (d_samp_rate > 0.0) ? d_samp_rate : m_last_fc.sample_rate;
-            if (samp_rate > 0.0) {
-                double drained_bytes = elapsed_s * samp_rate * s_bytes_per_sample;
-                m_est_fill_bytes = std::max(0.0, m_est_fill_bytes - drained_bytes);
-            }
-        }
+    const bool new_underflow = fc.underflow && !m_underflow;
+    m_underflow = fc.underflow;
+    if (new_underflow) {
+        m_started = false;
+        m_filling = true;
     }
-    m_last_update_time = now;
+
+    if (m_started) {
+        m_filling = fc.nearly_empty;
+        return;
+    }
+
+    const double level_bytes = static_cast<double>(fc.buffer_size) *
+                               (static_cast<double>(fc.buffer_level) / 4095.0);
+    const double target_bytes = s_fill_seconds * drain_rate_bytes();
+    if (fc.nearly_full || level_bytes > target_bytes) {
+        m_started = true;
+        m_filling = false;
+    }
 }
 
+/**
+ * @brief Wakes work() if it waits in wait_rate_control().
+ *
+ * Call it after a change of m_rx_running or m_rate_control. With the mutex
+ * taken, work() either sees the change before it waits, or is already waiting
+ * when the notification comes. Without the mutex, the notification could
+ * arrive between the check and the wait, and work() would wait for a report
+ * that never comes.
+ */
+template <difi::context_version V,
+          sink_transport Transport,
+          difi::bit_depth BitDepth,
+          difi::byte_order ByteOrder>
+requires valid_bit_depth<BitDepth>
+void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::wake_rate_control()
+{
+    {
+        gr::thread::scoped_lock lock(m_fc_mutex);
+    }
+    m_fc_cv.notify_all();
+}
+
+/**
+ * @brief Delays the next packet as rate control requires.
+ *
+ * The sink first waits for the first flow control report. After that it sends
+ * at twice real time while update_fill_state() allows it, and sends nothing
+ * otherwise.
+ *
+ * It returns at once when rate control is disabled, and early when the
+ * receive thread stops.
+ *
+ * @param num_samples number of samples in the next packet
+ */
 template <difi::context_version V,
           sink_transport Transport,
           difi::bit_depth BitDepth,
@@ -415,99 +430,48 @@ void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::wait_rate_control(
         return;
     }
 
-    /*
-     * Rate limiting pacing:
-     * 1. Push samples until estimated or reported fill reaches max_buffer_fill_pct.
-     * 2. Once reached, sleep for the time needed to drain the excess above threshold.
-     *    Sleep again while the estimate stays above the threshold, for example
-     *    because a new flow control packet shows a fuller buffer than expected.
-     * 3. Wake early when a new flow control packet arrives, and compute the sleep
-     *    again from the level that it reports.
-     */
     gr::thread::scoped_lock lock(m_fc_mutex);
-    update_estimated_fill(std::chrono::steady_clock::now());
+    const auto stopped = [this]() {
+        return !m_rx_running.load() || !m_rate_control.load();
+    };
 
-    double samp_rate = (d_samp_rate > 0.0) ? d_samp_rate : m_last_fc.sample_rate;
-    double drain_rate_Bps = samp_rate * s_bytes_per_sample;
-    double pkt_bytes = static_cast<double>(num_samples) * s_bytes_per_sample;
-
-    if (m_last_fc.buffer_size > 0 && drain_rate_Bps > 0.0) {
-        double max_pct =
-            std::clamp(static_cast<double>(m_max_buffer_fill_pct.load()), 0.0, 100.0);
-        double max_fill_bytes =
-            static_cast<double>(m_last_fc.buffer_size) * (max_pct / 100.0);
-
-        /*
-         * The packet fits below the target once the estimate drops to this
-         * level. It must not be negative: the estimate never drops below
-         * zero, so with a target smaller than one packet the sink would wait
-         * too long for every packet and send slower than real time.
-         */
-        const double room_bytes = std::max(0.0, max_fill_bytes - pkt_bytes);
-
-        while (m_est_fill_bytes > room_bytes) {
-            uint64_t sleep_ns = static_cast<uint64_t>(
-                ((m_est_fill_bytes - room_bytes) / drain_rate_Bps) * 1000000000.0);
-            /*
-             * End the wait early only when a new report arrives.
-             *
-             * Do not test the flags of the last report: they stay set until
-             * the next report, so the sink would keep sending at full speed.
-             *
-             * Do not test the estimate: it can be below the target while the
-             * packet does not fit yet, so the wait would end at once, on every
-             * pass of the loop.
-             *
-             * The receive thread wakes this thread on every report. The loop
-             * then computes the sleep again from the new estimate. A report
-             * of an empty buffer ends the wait at once, because the packet
-             * then fits.
-             */
-            const uint64_t reports = m_fc_reports;
-            m_fc_cv.wait_for(
-                lock, boost::chrono::nanoseconds(sleep_ns), [this, reports]() {
-                    return !m_rx_running.load() || !m_rate_control.load() ||
-                           m_fc_reports != reports;
-                });
-            if (!m_rx_running.load() || !m_rate_control.load()) {
-                return;
-            }
-            /*
-             * Do not lower the estimate to make room for the packet. A report
-             * that arrived during the wait may show a fuller buffer than
-             * expected, and the sink must then wait again.
-             */
-            update_estimated_fill(std::chrono::steady_clock::now());
-        }
-
-        /*
-         * Limit the rate also while the buffer is below the target.
-         *
-         * Move the planned send time forward by a fixed step for each packet,
-         * not from the current time. A sleep that ends late is then made up
-         * by the next packets, so the average rate does not drop.
-         * After a long pause, for example a wait for the buffer to drain,
-         * start again close to the current time, so that the sink does not
-         * send all the missed packets at once.
-         */
-        const auto now = std::chrono::steady_clock::now();
-        m_next_send_time = std::max(m_next_send_time, now - s_max_send_lag);
-        if (m_next_send_time > now) {
-            const auto sleep_ns =
-                std::chrono::nanoseconds(m_next_send_time - now).count();
-            m_fc_cv.wait_for(lock, boost::chrono::nanoseconds(sleep_ns), [this]() {
-                return !m_rx_running.load() || !m_rate_control.load();
-            });
-            if (!m_rx_running.load() || !m_rate_control.load()) {
-                return;
-            }
-        }
-        m_next_send_time += std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::duration<double>(pkt_bytes /
-                                          (s_max_rate_factor * drain_rate_Bps)));
-
-        m_est_fill_bytes += pkt_bytes;
+    /*
+     * Wait while the digitizer plays out the samples in its buffer. This can
+     * take seconds, so the wait has no timeout. Only a report or a stop ends
+     * it.
+     */
+    m_fc_cv.wait(lock, [this, &stopped]() { return stopped() || m_filling; });
+    if (stopped()) {
+        return;
     }
+
+    const double drain_rate = drain_rate_bytes();
+    if (drain_rate <= 0.0) {
+        return;
+    }
+
+    /*
+     * Send at no more than twice real time.
+     *
+     * Move the planned send time forward by a fixed step for each packet,
+     * not from the current time. A sleep that ends late is then made up
+     * by the next packets, so the average rate does not drop.
+     * After a long pause, for example a wait for the buffer to drain,
+     * start again close to the current time, so that the sink does not
+     * send all the missed packets at once.
+     */
+    const auto now = std::chrono::steady_clock::now();
+    m_next_send_time = std::max(m_next_send_time, now - s_max_send_lag);
+    if (m_next_send_time > now) {
+        const auto sleep_ns = std::chrono::nanoseconds(m_next_send_time - now).count();
+        m_fc_cv.wait_for(lock, boost::chrono::nanoseconds(sleep_ns), stopped);
+        if (stopped()) {
+            return;
+        }
+    }
+    const double pkt_bytes = static_cast<double>(num_samples) * s_bytes_per_sample;
+    m_next_send_time += std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::duration<double>(pkt_bytes / (s_max_rate_factor * drain_rate)));
 }
 
 template <difi::context_version V,

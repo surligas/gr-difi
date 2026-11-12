@@ -265,8 +265,6 @@ void bind_difi_sink_cpp(py::module& m)
         int ref_point_int,
         int time_source_int,
         bool rate_control,
-        float max_buffer_fill_pct,
-        float buffer_fill_delta,
         difi::byte_order byte_order
     ) -> difi_sink_base::sptr {
         bool is_alt = (context_version_int == 72 || context_version_int == static_cast<int>(difi::context_version::alternative));
@@ -281,23 +279,23 @@ void bind_difi_sink_cpp(py::module& m)
                     byte_order,
                     ip_addr, port, samp_rate, samples_per_packet, stream_number, context_interval,
                     length_tag_name, lead_time_us,
-                    rf_freq, if_freq, bandwidth, rf_gain, if_gain, ref_level, if_band_offset, rp, tsi, rate_control, max_buffer_fill_pct, buffer_fill_delta);
+                    rf_freq, if_freq, bandwidth, rf_gain, if_gain, ref_level, if_band_offset, rp, tsi, rate_control);
                 else return make_sink<difi::context_version::alternative, tcp_client, difi::bit_depth::bits_16>(
                     byte_order,
                     ip_addr, port, samp_rate, samples_per_packet, stream_number, context_interval,
                     length_tag_name, lead_time_us,
-                    rf_freq, if_freq, bandwidth, rf_gain, if_gain, ref_level, if_band_offset, rp, tsi, rate_control, max_buffer_fill_pct, buffer_fill_delta);
+                    rf_freq, if_freq, bandwidth, rf_gain, if_gain, ref_level, if_band_offset, rp, tsi, rate_control);
             } else {
                 if (is_8bit) return make_sink<difi::context_version::alternative, udp_client, difi::bit_depth::bits_8>(
                     byte_order,
                     ip_addr, port, samp_rate, samples_per_packet, stream_number, context_interval,
                     length_tag_name, lead_time_us,
-                    rf_freq, if_freq, bandwidth, rf_gain, if_gain, ref_level, if_band_offset, rp, tsi, rate_control, max_buffer_fill_pct, buffer_fill_delta);
+                    rf_freq, if_freq, bandwidth, rf_gain, if_gain, ref_level, if_band_offset, rp, tsi, rate_control);
                 else return make_sink<difi::context_version::alternative, udp_client, difi::bit_depth::bits_16>(
                     byte_order,
                     ip_addr, port, samp_rate, samples_per_packet, stream_number, context_interval,
                     length_tag_name, lead_time_us,
-                    rf_freq, if_freq, bandwidth, rf_gain, if_gain, ref_level, if_band_offset, rp, tsi, rate_control, max_buffer_fill_pct, buffer_fill_delta);
+                    rf_freq, if_freq, bandwidth, rf_gain, if_gain, ref_level, if_band_offset, rp, tsi, rate_control);
             }
         } else {
             if (is_tcp) {
@@ -305,23 +303,23 @@ void bind_difi_sink_cpp(py::module& m)
                     byte_order,
                     ip_addr, port, samp_rate, samples_per_packet, stream_number, context_interval,
                     length_tag_name, lead_time_us,
-                    rf_freq, if_freq, bandwidth, rf_gain, if_gain, ref_level, if_band_offset, rp, tsi, rate_control, max_buffer_fill_pct, buffer_fill_delta);
+                    rf_freq, if_freq, bandwidth, rf_gain, if_gain, ref_level, if_band_offset, rp, tsi, rate_control);
                 else return make_sink<difi::context_version::standard, tcp_client, difi::bit_depth::bits_16>(
                     byte_order,
                     ip_addr, port, samp_rate, samples_per_packet, stream_number, context_interval,
                     length_tag_name, lead_time_us,
-                    rf_freq, if_freq, bandwidth, rf_gain, if_gain, ref_level, if_band_offset, rp, tsi, rate_control, max_buffer_fill_pct, buffer_fill_delta);
+                    rf_freq, if_freq, bandwidth, rf_gain, if_gain, ref_level, if_band_offset, rp, tsi, rate_control);
             } else {
                 if (is_8bit) return make_sink<difi::context_version::standard, udp_client, difi::bit_depth::bits_8>(
                     byte_order,
                     ip_addr, port, samp_rate, samples_per_packet, stream_number, context_interval,
                     length_tag_name, lead_time_us,
-                    rf_freq, if_freq, bandwidth, rf_gain, if_gain, ref_level, if_band_offset, rp, tsi, rate_control, max_buffer_fill_pct, buffer_fill_delta);
+                    rf_freq, if_freq, bandwidth, rf_gain, if_gain, ref_level, if_band_offset, rp, tsi, rate_control);
                 else return make_sink<difi::context_version::standard, udp_client, difi::bit_depth::bits_16>(
                     byte_order,
                     ip_addr, port, samp_rate, samples_per_packet, stream_number, context_interval,
                     length_tag_name, lead_time_us,
-                    rf_freq, if_freq, bandwidth, rf_gain, if_gain, ref_level, if_band_offset, rp, tsi, rate_control, max_buffer_fill_pct, buffer_fill_delta);
+                    rf_freq, if_freq, bandwidth, rf_gain, if_gain, ref_level, if_band_offset, rp, tsi, rate_control);
             }
         }
     };
@@ -347,8 +345,6 @@ void bind_difi_sink_cpp(py::module& m)
         int ref_point_int,
         int time_source_int,
         bool rate_control,
-        float max_buffer_fill_pct,
-        float buffer_fill_delta,
         difi::byte_order byte_order
     ) {
         return make_dispatch(ip_addr, port, samp_rate, samples_per_packet,
@@ -358,7 +354,7 @@ void bind_difi_sink_cpp(py::module& m)
                              rf_freq, if_freq, bandwidth,
                              rf_gain, if_gain, ref_level, if_band_offset,
                              8, ref_point_int, time_source_int,
-                             rate_control, max_buffer_fill_pct, buffer_fill_delta,
+                             rate_control,
                              byte_order);
     };
 
@@ -383,8 +379,6 @@ void bind_difi_sink_cpp(py::module& m)
         int ref_point_int,
         int time_source_int,
         bool rate_control,
-        float max_buffer_fill_pct,
-        float buffer_fill_delta,
         difi::byte_order byte_order
     ) {
         return make_dispatch(ip_addr, port, samp_rate, samples_per_packet,
@@ -394,7 +388,7 @@ void bind_difi_sink_cpp(py::module& m)
                              rf_freq, if_freq, bandwidth,
                              rf_gain, if_gain, ref_level, if_band_offset,
                              16, ref_point_int, time_source_int,
-                             rate_control, max_buffer_fill_pct, buffer_fill_delta,
+                             rate_control,
                              byte_order);
     };
 
@@ -422,8 +416,6 @@ void bind_difi_sink_cpp(py::module& m)
            py::arg("ref_point") = static_cast<int>(difi::reference_point::if_converter),
            py::arg("time_source") = static_cast<int>(difi::tsi_type::posix),
            py::arg("rate_control") = false,
-           py::arg("max_buffer_fill_pct") = 50.0f,
-           py::arg("buffer_fill_delta") = 1.0f,
            py::arg("byte_order") = difi::byte_order::network
         )
         .def_static("make", make_dispatch,
@@ -448,8 +440,6 @@ void bind_difi_sink_cpp(py::module& m)
            py::arg("ref_point") = static_cast<int>(difi::reference_point::if_converter),
            py::arg("time_source") = static_cast<int>(difi::tsi_type::posix),
            py::arg("rate_control") = false,
-           py::arg("max_buffer_fill_pct") = 50.0f,
-           py::arg("buffer_fill_delta") = 1.0f,
            py::arg("byte_order") = difi::byte_order::network
         )
         .def("set_length_tag_name", &difi_sink_base::set_length_tag_name, py::arg("tag_name"))
@@ -485,10 +475,6 @@ void bind_difi_sink_cpp(py::module& m)
         .def("tsi", &difi_sink_base::tsi)
         .def("set_rate_control", &difi_sink_base::set_rate_control, py::arg("enabled"))
         .def("rate_control", &difi_sink_base::rate_control)
-        .def("set_max_buffer_fill_pct", &difi_sink_base::set_max_buffer_fill_pct, py::arg("pct"))
-        .def("max_buffer_fill_pct", &difi_sink_base::max_buffer_fill_pct)
-        .def("set_buffer_fill_delta", &difi_sink_base::set_buffer_fill_delta, py::arg("delta"))
-        .def("buffer_fill_delta", &difi_sink_base::buffer_fill_delta)
         .def("last_buffer_fill_pct", &difi_sink_base::last_buffer_fill_pct)
         .def("last_buffer_level", &difi_sink_base::last_buffer_level)
         .def("device_buffer_size", &difi_sink_base::device_buffer_size)
@@ -519,8 +505,6 @@ void bind_difi_sink_cpp(py::module& m)
        py::arg("ref_point") = static_cast<int>(difi::reference_point::if_converter),
        py::arg("time_source") = static_cast<int>(difi::tsi_type::posix),
        py::arg("rate_control") = false,
-       py::arg("max_buffer_fill_pct") = 50.0f,
-       py::arg("buffer_fill_delta") = 1.0f,
        py::arg("byte_order") = difi::byte_order::network
     );
 
@@ -545,8 +529,6 @@ void bind_difi_sink_cpp(py::module& m)
        py::arg("ref_point") = static_cast<int>(difi::reference_point::if_converter),
        py::arg("time_source") = static_cast<int>(difi::tsi_type::posix),
        py::arg("rate_control") = false,
-       py::arg("max_buffer_fill_pct") = 50.0f,
-       py::arg("buffer_fill_delta") = 1.0f,
        py::arg("byte_order") = difi::byte_order::network
     );
 
@@ -571,8 +553,6 @@ void bind_difi_sink_cpp(py::module& m)
        py::arg("ref_point") = static_cast<int>(difi::reference_point::if_converter),
        py::arg("time_source") = static_cast<int>(difi::tsi_type::posix),
        py::arg("rate_control") = false,
-       py::arg("max_buffer_fill_pct") = 50.0f,
-       py::arg("buffer_fill_delta") = 1.0f,
        py::arg("byte_order") = difi::byte_order::network
     );
 }

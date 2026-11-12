@@ -1063,16 +1063,9 @@ class qa_testcpp(gr_unittest.TestCase):
 
         assert sink_rf.rate_control() is False
         assert sink_rf.context().class_id == 0x006a621e00000001
-        assert sink_rf.max_buffer_fill_pct() == 50.0
-        assert sink_rf.buffer_fill_delta() == 1.0
-        sink_rf.set_buffer_fill_delta(2.5)
-        assert sink_rf.buffer_fill_delta() == 2.5
-        sink_rf.set_buffer_fill_delta(1.0)
         sink_rf.set_rate_control(True)
         assert sink_rf.rate_control() is True
         assert sink_rf.context().class_id == 0x006a621e00030001
-        sink_rf.set_max_buffer_fill_pct(75.0)
-        assert sink_rf.max_buffer_fill_pct() == 75.0
         sink_rf.set_rate_control(False)
         assert sink_rf.rate_control() is False
         assert sink_rf.context().class_id == 0x006a621e00000001
@@ -1099,7 +1092,7 @@ class qa_testcpp(gr_unittest.TestCase):
         sink = difi_sink_cpp_sc16(
             '127.0.0.1', sink_p, 1000000, 128,
             stream_number=0, context_interval=100,
-            rate_control=True, max_buffer_fill_pct=50.0
+            rate_control=True
         )
         tb.connect(src, sink)
 
@@ -1141,7 +1134,7 @@ class qa_testcpp(gr_unittest.TestCase):
             tb_thread.join()
             sock.close()
 
-    def test_sink_status_message_port_and_throttling(self):
+    def test_sink_status_message_port_publishes_every_report(self):
         sink_p, _ = get_open_ports()
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.bind(('127.0.0.1', sink_p))
@@ -1153,8 +1146,7 @@ class qa_testcpp(gr_unittest.TestCase):
         sink = difi_sink_cpp_sc16(
             '127.0.0.1', sink_p, 1000000, 128,
             stream_number=0, context_interval=100,
-            rate_control=True, max_buffer_fill_pct=50.0,
-            buffer_fill_delta=5.0
+            rate_control=True
         )
         msg_debug = blocks.message_debug()
         tb.connect(src, sink)
@@ -1163,12 +1155,18 @@ class qa_testcpp(gr_unittest.TestCase):
         tb_thread = threading.Thread(target=tb.run)
         tb_thread.start()
 
+        def wait_for_messages(count):
+            for _ in range(50):
+                if msg_debug.num_messages() >= count:
+                    break
+                time.sleep(0.01)
+
         try:
             # 1. Receive context packet emitted by sink
             ctx_pkt, client_addr = sock.recvfrom(2048)
             assert len(ctx_pkt) in (72, 108)
 
-            # 2. Hardware sends first flow control packet (level = 1000, ~24.4%)
+            # 2. Hardware sends the first flow control packet
             fc = difi.flow_control()
             fc.stream_id = 0
             fc.buffer_size = 1000000
@@ -1179,12 +1177,7 @@ class qa_testcpp(gr_unittest.TestCase):
             fc.underflow = False
             sock.sendto(difi.pack_flow_control(fc), client_addr)
 
-            # Wait for first message to be published
-            for _ in range(50):
-                if msg_debug.num_messages() >= 1:
-                    break
-                time.sleep(0.01)
-
+            wait_for_messages(1)
             assert msg_debug.num_messages() == 1
             msg0 = msg_debug.get_message(0)
             assert pmt.is_dict(msg0)
@@ -1193,39 +1186,20 @@ class qa_testcpp(gr_unittest.TestCase):
             assert pmt.to_long(pmt.dict_ref(msg0, pmt.intern("buffer_level"), pmt.PMT_NIL)) == 1000
             assert pmt.to_bool(pmt.dict_ref(msg0, pmt.intern("overflow"), pmt.PMT_NIL)) is False
 
-            # 3. Hardware sends small buffer level change (< 5.0% delta)
-            # 1020 is ~24.9% (delta ~ 0.5% < 5.0%)
-            fc.buffer_level = 1020
+            # 3. A small change of the level is published too
+            fc.buffer_level = 1001
             sock.sendto(difi.pack_flow_control(fc), client_addr)
-            time.sleep(0.05)
-            # Throttled: no new message should have been emitted
-            assert msg_debug.num_messages() == 1
-
-            # 4. Hardware sends large buffer level change (>= 5.0% delta)
-            # 1500 is ~36.6% (delta ~ 12.2% >= 5.0%)
-            fc.buffer_level = 1500
-            sock.sendto(difi.pack_flow_control(fc), client_addr)
-            for _ in range(50):
-                if msg_debug.num_messages() >= 2:
-                    break
-                time.sleep(0.01)
-
+            wait_for_messages(2)
             assert msg_debug.num_messages() == 2
             msg1 = msg_debug.get_message(1)
-            fill_pct1 = pmt.to_double(pmt.dict_ref(msg1, pmt.intern("buffer_fill_pct"), pmt.PMT_NIL))
-            assert math.isclose(fill_pct1, (1500 / 4095.0) * 100.0, rel_tol=1e-3)
+            assert pmt.to_long(pmt.dict_ref(msg1, pmt.intern("buffer_level"), pmt.PMT_NIL)) == 1001
 
-            # 5. Hardware sends state flag change (e.g., overflow occurs, even with same buffer level)
-            fc.overflow = True
+            # 4. A report identical to the previous one is published too
             sock.sendto(difi.pack_flow_control(fc), client_addr)
-            for _ in range(50):
-                if msg_debug.num_messages() >= 3:
-                    break
-                time.sleep(0.01)
-
+            wait_for_messages(3)
             assert msg_debug.num_messages() == 3
             msg2 = msg_debug.get_message(2)
-            assert pmt.to_bool(pmt.dict_ref(msg2, pmt.intern("overflow"), pmt.PMT_NIL)) is True
+            assert pmt.to_long(pmt.dict_ref(msg2, pmt.intern("buffer_level"), pmt.PMT_NIL)) == 1001
 
         finally:
             tb.stop()
@@ -1233,23 +1207,22 @@ class qa_testcpp(gr_unittest.TestCase):
             tb_thread.join()
             sock.close()
 
-    def test_sink_rate_control_drain_sleep_and_early_wakeup(self):
+    def test_sink_rate_control_waits_for_nearly_empty(self):
         sink_p, _ = get_open_ports()
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.bind(('127.0.0.1', sink_p))
         sock.settimeout(2.0)
 
-        # 10,000 samples/sec * 4 bytes/sample = 40,000 bytes/sec drain rate.
-        # Buffer size = 40,000 bytes (1.0s capacity), max_buffer_fill_pct = 50% (20,000 bytes).
-        # Target drain level = 25% (10,000 bytes).
-        # Each packet is 100 samples = 400 bytes.
+        # 10,000 samples/sec * 4 bytes/sample = 40,000 bytes/sec.
+        # 2 seconds of samples are 80,000 bytes, so the buffer of 400,000
+        # bytes holds 10 seconds. Each packet is 100 samples = 400 bytes.
         tb = gr.top_block()
         src_data = [1, 2] * 2000
         src = blocks.vector_source_s(src_data, True, 2)
         sink = difi_sink_cpp_sc16(
             '127.0.0.1', sink_p, 10000, 100,
             stream_number=0, context_interval=1000,
-            rate_control=True, max_buffer_fill_pct=50.0
+            rate_control=True
         )
         tb.connect(src, sink)
 
@@ -1261,22 +1234,26 @@ class qa_testcpp(gr_unittest.TestCase):
             ctx_pkt, client_addr = sock.recvfrom(2048)
             assert len(ctx_pkt) in (72, 108)
 
-            # 2. Send FC packet with buffer already above threshold (75% = 30,000 bytes)
-            # Without early wakeup, draining from 30,000 to 10,000 bytes at 40,000 B/s takes 0.5s.
+            # 2. The first report shows 3 seconds of samples (120,000 bytes),
+            # more than 2 seconds, so the sink must not send.
             fc = difi.flow_control()
             fc.stream_id = 0
-            fc.buffer_size = 40000
-            fc.buffer_level = int(0.75 * 4095)
+            fc.buffer_size = 400000
+            fc.buffer_level = int(0.3 * 4095)
             fc.nearly_empty = False
             sock.sendto(difi.pack_flow_control(fc), client_addr)
 
-            # Verify sink is sleeping and not pushing data packets during the first 100 ms
             sock.settimeout(0.1)
             with pytest.raises(socket.timeout):
                 sock.recvfrom(2048)
 
-            # 3. Send nearly_empty FC packet and verify sink wakes up ASAP (< 100 ms)
+            # 3. A lower level alone does not restart the sink.
             fc.buffer_level = 100
+            sock.sendto(difi.pack_flow_control(fc), client_addr)
+            with pytest.raises(socket.timeout):
+                sock.recvfrom(2048)
+
+            # 4. A nearly empty report restarts it at once (< 100 ms)
             fc.nearly_empty = True
             t0 = time.monotonic()
             sock.sendto(difi.pack_flow_control(fc), client_addr)
@@ -1286,6 +1263,24 @@ class qa_testcpp(gr_unittest.TestCase):
             elapsed = time.monotonic() - t0
             assert len(pkt) > 0
             assert elapsed < 0.15
+
+            # 5. When the flag clears, the sink stops again, although the
+            # level is far below 2 seconds.
+            fc.nearly_empty = False
+            sock.sendto(difi.pack_flow_control(fc), client_addr)
+
+            # Discard the packets sent before the sink received the report.
+            time.sleep(0.05)
+            sock.settimeout(0.0)
+            try:
+                while True:
+                    sock.recvfrom(2048)
+            except BlockingIOError:
+                pass
+
+            sock.settimeout(0.2)
+            with pytest.raises(socket.timeout):
+                sock.recvfrom(2048)
         finally:
             tb.stop()
             tb.wait()

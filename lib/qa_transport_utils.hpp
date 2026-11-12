@@ -150,16 +150,23 @@ public:
                                sizeof(dst)) == (ssize_t)payload.size());
     }
 
-    /*! \brief Receives a datagram, recording its sender so reply() can answer. */
+    /*!
+     * \brief Receives a datagram, recording its sender so reply() can answer.
+     *
+     * A receive that times out keeps the sender of the previous datagram, so
+     * a test can still reply after a period without traffic.
+     */
     std::string recv()
     {
         char buf[256] = {};
-        m_last_len = sizeof(m_last);
-        ssize_t n = ::recvfrom(m_socket, buf, sizeof(buf), 0, (sockaddr *)&m_last, &m_last_len);
+        sockaddr_in from = {};
+        socklen_t from_len = sizeof(from);
+        ssize_t n = ::recvfrom(m_socket, buf, sizeof(buf), 0, (sockaddr *)&from, &from_len);
         if (n < 0) {
-            m_last_len = 0;
             return std::string();
         }
+        m_last = from;
+        m_last_len = from_len;
         return std::string(buf, n);
     }
 

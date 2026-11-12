@@ -97,12 +97,21 @@ namespace gr {
       void set_tsi(difi::tsi_type tsi) { set_time_source(tsi); }
       difi::tsi_type tsi() const { return time_source(); }
 
+      /**
+       * @brief Enables or disables rate control.
+       *
+       * With rate control, the sink follows the flow control reports of the
+       * digitizer, and never sends faster than twice real time. At startup, it
+       * sends until a report shows more than 2 seconds of samples in the
+       * buffer, or has the nearly full flag set. After that, it sends only
+       * while the reports have the nearly empty flag set. An underflow starts
+       * the startup again.
+       *
+       * @param enabled true to enable rate control
+       */
       virtual void set_rate_control(bool enabled) = 0;
+      /** @brief Tells whether rate control is enabled. */
       virtual bool rate_control() const = 0;
-      virtual void set_max_buffer_fill_pct(float pct) = 0;
-      virtual float max_buffer_fill_pct() const = 0;
-      virtual void set_buffer_fill_delta(float delta) = 0;
-      virtual float buffer_fill_delta() const = 0;
       virtual float last_buffer_fill_pct() const = 0;
       virtual uint16_t last_buffer_level() const = 0;
       virtual uint64_t device_buffer_size() const = 0;
@@ -158,9 +167,7 @@ namespace gr {
           double if_band_offset = 0.0,
           difi::reference_point ref_point = difi::reference_point::if_converter,
           difi::tsi_type time_source = difi::tsi_type::posix,
-          bool rate_control = false,
-          float max_buffer_fill_pct = 50.0f,
-          float buffer_fill_delta = 1.0f);
+          bool rate_control = false);
     };
 
     typedef difi_sink_base difi_sink_cpp_sc8;
