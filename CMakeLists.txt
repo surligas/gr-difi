@@ -134,6 +134,53 @@ execute_process(
 # (a consistent style helps conda builds by using the same path separators)
 file(TO_CMAKE_PATH "${PYTHON_NUMPY_INCLUDE_DIR}" PYTHON_NUMPY_INCLUDE_DIR)
 
+# Python modules built with different pybind11 ABI versions cannot share
+# types. If our pybind11 differs from the one that GNU Radio was built with,
+# "import difi" fails with: referenced unknown base type "gr::sync_block".
+# This happens when the distribution updates pybind11 before it rebuilds
+# GNU Radio. GNU Radio does not record its pybind11 version. Instead, read the
+# ABI version from the name of the pybind11 internals object, which is embedded
+# in its compiled Python module (__pybind11_internals_vN).
+execute_process(
+    COMMAND "${PYTHON_EXECUTABLE}" -c
+    "import gnuradio.gr.gr_python as m; print(m.__file__, end='')"
+    OUTPUT_VARIABLE GR_PYTHON_MODULE
+    ERROR_QUIET)
+unset(GR_PYBIND11_ABI)
+if(GR_PYTHON_MODULE)
+    file(STRINGS "${GR_PYTHON_MODULE}" GR_PYBIND11_ABI_TAG
+         REGEX "__pybind11_internals_v[0-9]+" LIMIT_COUNT 1)
+    if(GR_PYBIND11_ABI_TAG MATCHES "__pybind11_internals_v([0-9]+)")
+        set(GR_PYBIND11_ABI ${CMAKE_MATCH_1})
+    endif()
+endif()
+if(GR_PYBIND11_ABI)
+    include(CheckCXXSourceCompiles)
+    set(CMAKE_REQUIRED_LIBRARIES pybind11::pybind11)
+    # Some pybind11 versions need libpython to link a program. The check only
+    # needs the compiler to evaluate PYBIND11_INTERNALS_VERSION, so build a
+    # static library. It is not linked.
+    set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+    # check_cxx_source_compiles caches its result. Clear it, so that the check
+    # runs again after pybind11 changes.
+    unset(DIFI_PYBIND11_ABI_MATCHES CACHE)
+    check_cxx_source_compiles("
+        #include <pybind11/pybind11.h>
+        static_assert(PYBIND11_INTERNALS_VERSION == ${GR_PYBIND11_ABI});
+        int main() { return 0; }"
+        DIFI_PYBIND11_ABI_MATCHES)
+    unset(CMAKE_TRY_COMPILE_TARGET_TYPE)
+    unset(CMAKE_REQUIRED_LIBRARIES)
+    if(NOT DIFI_PYBIND11_ABI_MATCHES)
+        message(WARNING
+            "pybind11 ${pybind11_VERSION} in ${pybind11_DIR} uses a different "
+            "ABI version than the pybind11 that GNU Radio was built with (ABI "
+            "version ${GR_PYBIND11_ABI}). The C++ library will work, but "
+            "'import difi' will fail. Point pybind11_DIR to a pybind11 that "
+            "matches GNU Radio, or rebuild GNU Radio with this pybind11.")
+    endif()
+endif()
+
 ########################################################################
 # Setup doxygen option
 ########################################################################

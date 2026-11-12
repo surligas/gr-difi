@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     pkg-config \
     python3 \
+    python3-pytest \
     pybind11-dev \
     libboost-chrono-dev \
     libboost-date-time-dev \

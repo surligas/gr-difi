@@ -33,28 +33,45 @@ namespace gr::difi::qa {
 const char *const LOOPBACK = "127.0.0.1";
 
 /*!
- * \brief Asks the operating system for a port that is currently free.
+ * \brief Finds a port number that is currently free for both UDP and TCP.
  *
  * Mirrors get_open_ports() in python/qa_difi_blocks_cpp.py, so that concurrent
  * test runs do not collide on a hardcoded port.
+ *
+ * It asks the system for a free UDP port, then tries to bind the same number
+ * for TCP, and tries again if that fails. UDP and TCP have separate port
+ * numbers, and a check of UDP alone made the TCP suites fail at random: the
+ * port was sometimes in use for TCP, for example by an outgoing connection of
+ * another program. The check binds to all interfaces, because the servers
+ * under test do the same.
  */
 inline uint16_t free_port()
 {
-    int s = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    BOOST_REQUIRE(s >= 0);
+    for (int attempt = 0; attempt < 100; ++attempt) {
+        int udp = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        BOOST_REQUIRE(udp >= 0);
 
-    sockaddr_in addr = {};
-    addr.sin_family = AF_INET;
-    addr.sin_port = 0;
-    ::inet_pton(AF_INET, LOOPBACK, &addr.sin_addr);
-    BOOST_REQUIRE(::bind(s, (const sockaddr *)&addr, sizeof(addr)) == 0);
+        sockaddr_in addr = {};
+        addr.sin_family = AF_INET;
+        addr.sin_port = 0;
+        addr.sin_addr.s_addr = htonl(INADDR_ANY);
+        BOOST_REQUIRE(::bind(udp, (const sockaddr *)&addr, sizeof(addr)) == 0);
 
-    sockaddr_in bound = {};
-    socklen_t len = sizeof(bound);
-    BOOST_REQUIRE(::getsockname(s, (sockaddr *)&bound, &len) == 0);
-    ::close(s);
+        socklen_t len = sizeof(addr);
+        BOOST_REQUIRE(::getsockname(udp, (sockaddr *)&addr, &len) == 0);
 
-    return ntohs(bound.sin_port);
+        int tcp = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        BOOST_REQUIRE(tcp >= 0);
+        const bool tcp_free = ::bind(tcp, (const sockaddr *)&addr, sizeof(addr)) == 0;
+        ::close(tcp);
+        ::close(udp);
+
+        if (tcp_free) {
+            return ntohs(addr.sin_port);
+        }
+    }
+    BOOST_FAIL("Found no port that is free for both UDP and TCP");
+    return 0;
 }
 
 /*! \brief The set of file descriptors this process currently has open. */

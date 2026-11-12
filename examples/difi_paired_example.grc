@@ -59,7 +59,6 @@ blocks:
     protocol: '1'
     sample_rate: '100000'
     stream_id: '0'
-    type: complex
   states:
     bus_sink: false
     bus_source: false
@@ -81,7 +80,7 @@ blocks:
     protocol: '1'
     socket_buffer_size: '2048'
     stream_num: '0'
-    type: complex
+    type: complex8
   states:
     bus_sink: false
     bus_source: false

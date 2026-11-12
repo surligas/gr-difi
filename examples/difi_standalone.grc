@@ -80,6 +80,23 @@ blocks:
     coordinate: [96, 236.0]
     rotation: 0
     state: enabled
+- name: blocks_complex_to_interleaved_char_0
+  id: blocks_complex_to_interleaved_char
+  parameters:
+    affinity: ''
+    alias: ''
+    comment: ''
+    maxoutbuf: '0'
+    minoutbuf: '0'
+    scale_factor: '1.0'
+    vector_output: 'True'
+  states:
+    bus_sink: false
+    bus_source: false
+    bus_structure: null
+    coordinate: [688, 284.0]
+    rotation: 0
+    state: enabled
 - name: blocks_throttle2_0
   id: blocks_throttle2
   parameters:
@@ -111,22 +128,16 @@ blocks:
     context_pack_size: '108'
     context_packet_send_count: '1000'
     data_size: '128'
-    gain: '1.0'
     ip_addr: 127.0.0.1
-    max_iq: amplitude
-    min_iq: -amplitude
-    offset: '0'
     port: '50003'
     protocol: '2'
     sample_rate: samp_rate
-    scaling: '2'
     stream_id: '0'
-    type: complex
   states:
     bus_sink: false
     bus_source: false
     bus_structure: null
-    coordinate: [688, 268.0]
+    coordinate: [944, 268.0]
     rotation: 0
     state: enabled
 - name: difi_source_cpp_0_0
@@ -348,7 +359,8 @@ blocks:
 
 connections:
 - [analog_sig_source_x_0, '0', blocks_throttle2_0, '0']
-- [blocks_throttle2_0, '0', difi_sink_cpp_0, '0']
+- [blocks_complex_to_interleaved_char_0, '0', difi_sink_cpp_0, '0']
+- [blocks_throttle2_0, '0', blocks_complex_to_interleaved_char_0, '0']
 - [blocks_throttle2_0, '0', qtgui_time_sink_x_0, '0']
 - [difi_source_cpp_0_0, '0', qtgui_time_sink_x_0_0, '0']
 

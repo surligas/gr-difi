@@ -6,7 +6,7 @@ receives DIFI packets from the network and emits samples, and a **sink** that
 packs samples into DIFI packets and transmits them. Both are templates over
 `gr_complex` (fc32) and `std::complex<char>` (sc8), at 8- or 16-bit depth.
 
-Requires GNU Radio >= 3.9 (3.10 in use here). C++20.
+Requires GNU Radio >= 3.9. C++20.
 
 ## Build and test
 
@@ -29,6 +29,22 @@ whatever was last `make install`ed. Either way a C++ change needs a rebuild
 first. C++ suites are skipped silently when Boost.Test is absent.
 
 Detailed output lands in `build/Testing/Temporary/LastTest.log`.
+
+**The Python QA needs the same pybind11 as GNU Radio.** Python modules built
+with different pybind11 ABI versions cannot share types, so `import difi` fails
+with `referenced unknown base type "gr::sync_block"`. This happens when a
+distribution updates pybind11 before it rebuilds GNU Radio. `cmake` checks for
+this mismatch and prints a warning. The C++ suites still work. To run the
+Python QA, use the container, where pybind11 and GNU Radio come from the same
+Debian release:
+
+```bash
+docker build -t gr-difi .
+docker run --rm gr-difi sh -c 'cd /src/gr-difi/build && ctest --output-on-failure'
+```
+
+The image contains a copy of the source taken when it was built, so rebuild
+the image after every change.
 
 **Assume no CI.** A workflow exists at `.github/workflows/.check-in.yaml`, but
 the leading dot in the filename means GitHub Actions never picks it up, and it
@@ -235,7 +251,8 @@ transport classes `DIFI_API`. Verify with `nm -DC build/lib/libgnuradio-difi.so`
 `lib/CMakeLists.txt`; `GR_ADD_CPP_TEST` handles Boost.Test wiring from there.
 Include `lib/qa_transport_utils.hpp` for the shared helpers instead of copying
 them: `free_port()` (always use it rather than a literal port, mirroring
-`get_open_ports()` in the Python QA), `peer` for the socket on the other end,
+`get_open_ports()` in the Python QA; `free_port()` returns a port that is free
+for both UDP and TCP), `peer` for the socket on the other end,
 `fd_opened_by()` to reach the private socket of a transport, and `sock_opt()` /
 `local_port()` to inspect it. Each suite is a separate binary, which is why the
 helpers are inline in a header rather than a library.
@@ -244,13 +261,9 @@ helpers are inline in a header rather than a library.
 `BOOST_CHECK_THROW(udp_server(port), ...)` declares a variable; write
 `udp_server{ port }`.
 
-## Known-red tests
+## Known issues
 
-`ctest -R qa_difi_blocks_cpp` fails with ~15 assertion errors. It is red on both
-`endianess` (HEAD `WIP: Fix endianess issues`) and the `redesign` branch built on
-top of it, and was already red before any transport work — verified by stashing
-all uncommitted changes and re-running. Do not treat it as a regression from a
-transport change; do re-check it if you touch packing or unpacking.
+None
 
 ## Git workflow
 
