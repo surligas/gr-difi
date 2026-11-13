@@ -1080,7 +1080,7 @@ class qa_testcpp(gr_unittest.TestCase):
         assert pmt.to_bool(pmt.dict_ref(fc_pmt, pmt.intern("nearly_full"), pmt.PMT_NIL)) is True
         assert pmt.to_bool(pmt.dict_ref(fc_pmt, pmt.intern("nearly_empty"), pmt.PMT_NIL)) is False
 
-    def test_sink_rate_control_handshake_and_flow(self):
+    def test_sink_rate_control_sends_before_first_report(self):
         sink_p, _ = get_open_ports()
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.bind(('127.0.0.1', sink_p))
@@ -1088,7 +1088,9 @@ class qa_testcpp(gr_unittest.TestCase):
 
         tb = gr.top_block()
         src_data = [1, 2] * 256
-        src = blocks.vector_source_s(src_data, False, 2)
+        # The source repeats, so that the flowgraph still runs when the
+        # report arrives.
+        src = blocks.vector_source_s(src_data, True, 2)
         sink = difi_sink_cpp_sc16(
             '127.0.0.1', sink_p, 1000000, 128,
             stream_number=0, context_interval=100,
@@ -1100,12 +1102,20 @@ class qa_testcpp(gr_unittest.TestCase):
         tb_thread.start()
 
         try:
-            # 1. Handshake: Sink transmits initial context packet to announce itself
+            # 1. The sink sends a context packet and then data at once,
+            # although no report has arrived yet.
             ctx_pkt, client_addr = sock.recvfrom(2048)
             assert len(ctx_pkt) in (72, 108)
+            assert (ctx_pkt[0] >> 4) == 4
             assert int.from_bytes(ctx_pkt[8:16], 'big') == 0x006a621e00030001
 
-            # 2. Hardware replies with flow control packet: buffer level 100, nearly_empty
+            data_pkt, _ = sock.recvfrom(2048)
+            assert len(data_pkt) > 28
+            assert (data_pkt[0] >> 4) == 1
+            assert int.from_bytes(data_pkt[8:16], 'big') == 0x006a621e00030000
+
+            # 2. The digitizer sends its first report: buffer level 100,
+            # nearly empty.
             fc = difi.flow_control()
             fc.stream_id = 0
             fc.buffer_size = 1000000
@@ -1113,18 +1123,7 @@ class qa_testcpp(gr_unittest.TestCase):
             fc.nearly_empty = True
             sock.sendto(difi.pack_flow_control(fc), client_addr)
 
-            # 3. Sink unblocks and transmits context (packet_count == 0) then data packet
-            pkt2, _ = sock.recvfrom(2048)
-            if len(pkt2) in (72, 108) and (pkt2[0] >> 4) == 4:
-                assert int.from_bytes(pkt2[8:16], 'big') == 0x006a621e00030001
-                data_pkt, _ = sock.recvfrom(2048)
-            else:
-                data_pkt = pkt2
-            assert len(data_pkt) > 28
-            assert (data_pkt[0] >> 4) == 1
-            assert int.from_bytes(data_pkt[8:16], 'big') == 0x006a621e00030000
-
-            # Verify sink state reflected the flow control
+            # The state of the sink shows the report.
             time.sleep(0.05)
             assert sink.last_buffer_level() == 100
             assert sink.device_nearly_empty() is True
@@ -1229,19 +1228,31 @@ class qa_testcpp(gr_unittest.TestCase):
         tb_thread = threading.Thread(target=tb.run)
         tb_thread.start()
 
+        def discard_pending():
+            # Discard the packets that the sink sent before it received the
+            # last report.
+            time.sleep(0.05)
+            sock.settimeout(0.0)
+            try:
+                while True:
+                    sock.recvfrom(2048)
+            except BlockingIOError:
+                pass
+
         try:
-            # 1. Handshake context packet
+            # 1. The sink sends at once, without waiting for a report.
             ctx_pkt, client_addr = sock.recvfrom(2048)
             assert len(ctx_pkt) in (72, 108)
 
             # 2. The first report shows 3 seconds of samples (120,000 bytes),
-            # more than 2 seconds, so the sink must not send.
+            # more than 2 seconds, so the sink stops.
             fc = difi.flow_control()
             fc.stream_id = 0
             fc.buffer_size = 400000
             fc.buffer_level = int(0.3 * 4095)
             fc.nearly_empty = False
             sock.sendto(difi.pack_flow_control(fc), client_addr)
+            discard_pending()
 
             sock.settimeout(0.1)
             with pytest.raises(socket.timeout):
@@ -1268,15 +1279,7 @@ class qa_testcpp(gr_unittest.TestCase):
             # level is far below 2 seconds.
             fc.nearly_empty = False
             sock.sendto(difi.pack_flow_control(fc), client_addr)
-
-            # Discard the packets sent before the sink received the report.
-            time.sleep(0.05)
-            sock.settimeout(0.0)
-            try:
-                while True:
-                    sock.recvfrom(2048)
-            except BlockingIOError:
-                pass
+            discard_pending()
 
             sock.settimeout(0.2)
             with pytest.raises(socket.timeout):

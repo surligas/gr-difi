@@ -22,7 +22,6 @@
 #include <cstring>
 #include <future>
 #include <string>
-#include <thread>
 
 using namespace gr::difi;
 using namespace gr::difi::qa;
@@ -89,7 +88,7 @@ public:
     {
         auto src = gnuradio::make_block_sptr<zero_source>();
         // The context interval is large, so that the sink sends mostly data
-        // packets after the handshake.
+        // packets.
         m_sink = difi_sink_cpp<difi::context_version::standard,
                                udp_client,
                                difi::bit_depth::bits_16,
@@ -223,12 +222,32 @@ bool stops_within(paced_sink& sink, peer& digitizer, std::chrono::milliseconds l
     return false;
 }
 
+/*!
+ * \brief Ends the startup of the sink at once, and checks that the sink then
+ * stops sending.
+ *
+ * The sink sends from the start, without waiting for a report. A report of 3
+ * seconds of samples in the buffer ends the startup. The function first reads
+ * the packets that the sink sent before the report arrived, so that later
+ * checks see only the packets sent after the report.
+ */
+void end_startup(peer& digitizer)
+{
+    BOOST_REQUIRE(!digitizer.recv().empty());
+    digitizer.reply(report(LEVEL_3_SECONDS, false));
+    // The sink sends a few packets at once when it starts, and a few more
+    // while the report is on its way. A sink that did not stop would send
+    // hundreds of packets in this window.
+    BOOST_REQUIRE_LE(data_bytes_within(digitizer, 300ms), 4 * PAYLOAD_BYTES);
+}
+
 } // namespace
 
 /*
  * While the sink fills the buffer, it must not send faster than twice real time.
  * It must not send much slower either, because sleeps that end late must not
- * lower the rate. It must keep sending even if no new report arrives.
+ * lower the rate. It must start at once and keep sending, although no report
+ * arrives.
  */
 BOOST_AUTO_TEST_CASE(t_fills_at_twice_real_time)
 {
@@ -236,9 +255,8 @@ BOOST_AUTO_TEST_CASE(t_fills_at_twice_real_time)
     peer digitizer(port);
     paced_sink sink(port);
 
-    // Until the first report arrives, the sink only sends context packets.
+    // The digitizer sends no report at all.
     BOOST_REQUIRE(!digitizer.recv().empty());
-    digitizer.reply(report(0, true));
     const auto start = std::chrono::steady_clock::now();
 
     // At twice real time, the sink needs about 1 s to send 2 seconds of
@@ -263,7 +281,6 @@ BOOST_AUTO_TEST_CASE(t_report_above_two_seconds_stops_sending)
     paced_sink sink(port);
 
     BOOST_REQUIRE(!digitizer.recv().empty());
-    digitizer.reply(report(0, true));
     BOOST_REQUIRE_GT(data_bytes_within(digitizer, 100ms), 0U);
 
     digitizer.reply(report(LEVEL_3_SECONDS, false));
@@ -284,7 +301,6 @@ BOOST_AUTO_TEST_CASE(t_nearly_full_report_stops_sending)
     paced_sink sink(port);
 
     BOOST_REQUIRE(!digitizer.recv().empty());
-    digitizer.reply(report(0, true));
     BOOST_REQUIRE_GT(data_bytes_within(digitizer, 100ms), 0U);
 
     digitizer.reply(report(LEVEL_1_SECOND, false, true));
@@ -303,11 +319,7 @@ BOOST_AUTO_TEST_CASE(t_only_nearly_empty_restarts_sending)
     peer digitizer(port);
     paced_sink sink(port);
 
-    BOOST_REQUIRE(!digitizer.recv().empty());
-    // The first report already shows more than 2 seconds of samples, so the
-    // sink must send no data at all.
-    digitizer.reply(report(LEVEL_3_SECONDS, false));
-    BOOST_CHECK_EQUAL(data_bytes_within(digitizer, 300ms), 0U);
+    end_startup(digitizer);
 
     digitizer.reply(report(LEVEL_1_SECOND, false));
     BOOST_CHECK_EQUAL(data_bytes_within(digitizer, 300ms), 0U);
@@ -327,10 +339,7 @@ BOOST_AUTO_TEST_CASE(t_cleared_nearly_empty_stops_sending)
     peer digitizer(port);
     paced_sink sink(port);
 
-    BOOST_REQUIRE(!digitizer.recv().empty());
-    // End the startup at once.
-    digitizer.reply(report(LEVEL_3_SECONDS, false));
-    BOOST_CHECK_EQUAL(data_bytes_within(digitizer, 300ms), 0U);
+    end_startup(digitizer);
 
     digitizer.reply(report(1, true));
     BOOST_REQUIRE_GT(data_bytes_within(digitizer, 100ms), 0U);
@@ -353,10 +362,7 @@ BOOST_AUTO_TEST_CASE(t_underflow_starts_the_startup_again)
     peer digitizer(port);
     paced_sink sink(port);
 
-    BOOST_REQUIRE(!digitizer.recv().empty());
-    // End the startup at once.
-    digitizer.reply(report(LEVEL_3_SECONDS, false));
-    BOOST_CHECK_EQUAL(data_bytes_within(digitizer, 300ms), 0U);
+    end_startup(digitizer);
 
     digitizer.reply(report(0, true, false, true));
     BOOST_REQUIRE_GT(data_bytes_within(digitizer, 100ms), 0U);
@@ -383,9 +389,7 @@ BOOST_AUTO_TEST_CASE(t_underflow_flag_that_stays_set_starts_the_startup_once)
     peer digitizer(port);
     paced_sink sink(port);
 
-    BOOST_REQUIRE(!digitizer.recv().empty());
-    digitizer.reply(report(LEVEL_3_SECONDS, false));
-    BOOST_CHECK_EQUAL(data_bytes_within(digitizer, 300ms), 0U);
+    end_startup(digitizer);
 
     digitizer.reply(report(0, true, false, true));
     BOOST_REQUIRE_GT(data_bytes_within(digitizer, 100ms), 0U);
@@ -403,15 +407,15 @@ BOOST_AUTO_TEST_CASE(t_underflow_flag_that_stays_set_starts_the_startup_once)
 
 /*
  * A digitizer that never answers must not keep the flowgraph from stopping.
- * Until the first report arrives, the sink waits inside work().
+ * The sink then keeps sending at twice real time, and waits inside work()
+ * between the packets.
  */
-BOOST_AUTO_TEST_CASE(t_stops_while_waiting_for_the_first_report)
+BOOST_AUTO_TEST_CASE(t_stops_without_reports)
 {
     uint16_t port = free_port();
     peer digitizer(port);
     paced_sink sink(port);
 
-    // The context packet shows that the sink now waits for a report.
     BOOST_REQUIRE(!digitizer.recv().empty());
 
     BOOST_CHECK(stops_within(sink, digitizer, 1000ms));
@@ -427,9 +431,7 @@ BOOST_AUTO_TEST_CASE(t_stops_while_waiting_for_nearly_empty)
     peer digitizer(port);
     paced_sink sink(port);
 
-    BOOST_REQUIRE(!digitizer.recv().empty());
-    digitizer.reply(report(LEVEL_3_SECONDS, false));
-    std::this_thread::sleep_for(200ms);
+    end_startup(digitizer);
 
     BOOST_CHECK(stops_within(sink, digitizer, 1000ms));
 }
@@ -444,9 +446,7 @@ BOOST_AUTO_TEST_CASE(t_disabling_rate_control_ends_the_wait)
     peer digitizer(port);
     paced_sink sink(port);
 
-    BOOST_REQUIRE(!digitizer.recv().empty());
-    digitizer.reply(report(LEVEL_3_SECONDS, false));
-    std::this_thread::sleep_for(200ms);
+    end_startup(digitizer);
 
     sink.sink().set_rate_control(false);
     BOOST_CHECK_GT(data_bytes_within(digitizer, 300ms), 0U);

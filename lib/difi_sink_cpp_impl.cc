@@ -100,7 +100,6 @@ difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::difi_sink_cpp_impl(
       d_contex_packet_interval(context_interval)
 {
     m_rate_control.store(rate_control);
-    m_first_fc_received.store(false);
     m_rx_running.store(false);
 
     this->message_port_register_out(pmt::intern("status"));
@@ -196,7 +195,6 @@ bool difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::start()
             m_started = false;
             m_underflow = false;
         }
-        m_first_fc_received.store(false);
         start_rx_thread();
     }
     return gr::sync_block::start();
@@ -265,7 +263,6 @@ void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::rx_loop()
                     gr::thread::scoped_lock lock(m_fc_mutex);
                     m_last_fc = *fc_opt;
                     update_fill_state(*fc_opt);
-                    m_first_fc_received.store(true);
                 }
                 m_fc_cv.notify_all();
                 this->message_port_pub(pmt::intern("status"),
@@ -314,10 +311,11 @@ double difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::drain_rate_bytes()
 /**
  * @brief Decides from a flow control report whether the sink sends or waits.
  *
- * At startup, the sink sends until the report shows more than s_fill_seconds
+ * At startup, the sink sends until a report shows more than s_fill_seconds
  * of samples in the buffer, because the digitizer transmits nothing before
- * that. It also stops when the digitizer reports a nearly full buffer. This is
- * needed when the buffer is smaller than s_fill_seconds of samples.
+ * that. The startup begins before the first report arrives. It also stops
+ * when the digitizer reports a nearly full buffer. This is needed when the
+ * buffer is smaller than s_fill_seconds of samples.
  *
  * After that, the sink sends only while the digitizer says that the buffer is
  * nearly empty. This keeps the buffer close to the nearly empty level, so
@@ -388,9 +386,9 @@ void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::wake_rate_control()
 /**
  * @brief Delays the next packet as rate control requires.
  *
- * The sink first waits for the first flow control report. After that it sends
- * at twice real time while update_fill_state() allows it, and sends nothing
- * otherwise.
+ * The sink sends at twice real time while update_fill_state() allows it, and
+ * sends nothing otherwise. It starts to send at once, and does not wait for
+ * the first flow control report.
  *
  * It returns at once when rate control is disabled, and early when the
  * receive thread stops.
@@ -411,23 +409,6 @@ void difi_sink_cpp_impl<V, Transport, BitDepth, ByteOrder>::wait_rate_control(
 
     if (!m_rx_running.load()) {
         start_rx_thread();
-    }
-
-    // Handshake: wait for the first flow control frame
-    if (!m_first_fc_received.load()) {
-        gr::thread::scoped_lock lock(m_fc_mutex);
-        while (m_rx_running.load() && !m_first_fc_received.load()) {
-            lock.unlock();
-            send_context();
-            lock.lock();
-            m_fc_cv.wait_for(lock, boost::chrono::milliseconds(500), [this]() {
-                return !m_rx_running.load() || m_first_fc_received.load();
-            });
-        }
-    }
-
-    if (!m_rx_running.load()) {
-        return;
     }
 
     gr::thread::scoped_lock lock(m_fc_mutex);

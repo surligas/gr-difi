@@ -142,15 +142,16 @@ pass on the context packets that the source received.
 
 **Sink rate control.** With rate control on, the sink follows the flow control
 reports that the receiver (a digitizer) sends back on the same socket. A
-receive thread (`rx_loop`) parses them. Until the first report arrives, the
-sink sends only context packets. At startup, and again after an underflow, the
-sink sends data at twice real time until a report shows more than 2 seconds of
-samples in the buffer, or has the nearly full flag set. The digitizer starts to
-transmit only when its buffer holds about 2 seconds of samples. After that, the
-sink sends only while the reports have the nearly empty flag set. This keeps
-the latency low. Rate control also sets the information class in the Class ID
-field of every packet to `bit_padding_data_plane`. Every report and every
-received context packet is posted on the `status` message port.
+receive thread (`rx_loop`) parses them. The sink starts to send at once, and
+does not wait for the first report. At startup, and again after an underflow,
+the sink sends data at twice real time until a report shows more than 2
+seconds of samples in the buffer, or has the nearly full flag set. The
+digitizer starts to transmit only when its buffer holds about 2 seconds of
+samples. After that, the sink sends only while the reports have the nearly
+empty flag set. This keeps the latency low. Rate control also sets the
+information class in the Class ID field of every packet to
+`bit_padding_data_plane`. Every report and every received context packet is
+posted on the `status` message port.
 `lib/qa_sink_rate_control.cc` tests the rate control against a fake digitizer.
 
 **`work()` blocks, and the source's recurses.** `difi_source_cpp_impl::work`

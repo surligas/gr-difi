@@ -198,8 +198,8 @@ documentation: |-
 
      Rate control:
      - The sink follows the flow control reports of the digitizer.
-     - It sends context packets until the first report arrives.
      - It never sends faster than twice real time.
+     - It starts to send at once, and does not wait for the first report.
      - At startup, it sends until a report shows more than 2 seconds of samples in the buffer, or has the nearly full flag set. The digitizer transmits nothing before that.
      - After that, it sends only while the reports have the nearly empty flag set. This keeps the delay of the samples low.
      - An underflow starts the startup again.

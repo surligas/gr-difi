@@ -64,7 +64,6 @@ namespace gr {
         // thread is interrupted, and work() waits on this condition variable.
         mutable gr::thread::mutex m_fc_mutex;
         gr::thread::condition_variable m_fc_cv;
-        std::atomic<bool> m_first_fc_received{false};
         difi::flow_control m_last_fc{};
         /*
          * True while the sink sends, false while it waits for the digitizer
