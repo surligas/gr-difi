@@ -1033,13 +1033,13 @@ BOOST_AUTO_TEST_CASE(t_flow_control_parse_and_pack)
         0x00, 0x00, 0x00, 0x00, // w1: stream ID 0
         0x00, 0x6a, 0x62, 0x1e, // w2: class ID OUI
         0x00, 0x03, 0x00, 0x06, // w3: class ID (0x0003, packet class 0x0006)
-        0x00, 0x3b, 0xa5, 0xeb, // w4: message ID 3909099
-        0x00, 0x00, 0x00, 0xd7, // w5: controllee ID 215
-        0x94, 0xab, 0x70, 0x40, // w6: controller ID
-        0xa1, 0x00, 0x10, 0x00, // w7: full seconds
-        0x00, 0x00, 0x00, 0x00, // w8: frac upper
-        0x00, 0x00, 0x00, 0x00, // w9: frac lower
-        0x00, 0x00, 0x00, 0x00, // w10: CAM / reserved
+        0x00, 0x3b, 0xa5, 0xeb, // w4: integer seconds 3909099
+        0x00, 0x00, 0x00, 0xd7, // w5: fractional seconds upper
+        0x94, 0xab, 0x70, 0x40, // w6: fractional seconds lower (925912232000 ps)
+        0xa1, 0x00, 0x10, 0x00, // w7: CAM
+        0x00, 0x00, 0x00, 0x00, // w8: message ID
+        0x00, 0x00, 0x00, 0x00, // w9: controllee ID
+        0x00, 0x00, 0x00, 0x00, // w10: controller ID
         0x40, 0x30, 0x00, 0x02, // w11: CIF 0
         0x00, 0x00, 0x00, 0x02, // w12: CIF 1
         0x00, 0x00, 0x00, 0x64, // w13: ref point = 100 (if_converter)
@@ -1059,11 +1059,11 @@ BOOST_AUTO_TEST_CASE(t_flow_control_parse_and_pack)
     BOOST_CHECK(fc_opt->tsf == difi::tsf_type::picoseconds);
     BOOST_CHECK_EQUAL(fc_opt->stream_id, 0U);
     BOOST_CHECK_EQUAL(fc_opt->class_id, 0x006a621e00030006ULL);
-    BOOST_CHECK_EQUAL(fc_opt->message_id, 0x3ba5ebU);
-    BOOST_CHECK_EQUAL(fc_opt->controllee_id, 0xd7U);
-    BOOST_CHECK_EQUAL(fc_opt->controller_id, 0x94ab7040U);
-    BOOST_CHECK_EQUAL(fc_opt->full, 0xa1001000U);
-    BOOST_CHECK_EQUAL(fc_opt->frac, 0ULL);
+    BOOST_CHECK_EQUAL(fc_opt->message_id, 0U);
+    BOOST_CHECK_EQUAL(fc_opt->controllee_id, 0U);
+    BOOST_CHECK_EQUAL(fc_opt->controller_id, 0U);
+    BOOST_CHECK_EQUAL(fc_opt->full, 3909099U);
+    BOOST_CHECK_EQUAL(fc_opt->frac, 925912232000ULL);
     BOOST_CHECK_EQUAL(fc_opt->cif0, 0x40300002U);
     BOOST_CHECK_EQUAL(fc_opt->cif1, 0x00000002U);
     BOOST_CHECK(fc_opt->ref_point == difi::reference_point::if_converter);
@@ -1097,6 +1097,18 @@ BOOST_AUTO_TEST_CASE(t_flow_control_parse_and_pack)
 
     auto packed = difi::pack_flow_control(fc_tx);
     BOOST_CHECK_EQUAL(packed.size(), difi::FLOW_CONTROL_SIZE);
+
+    /*
+     * A round trip cannot catch a field order that pack and parse get wrong
+     * in the same way. Check the positions against the standard.
+     */
+    BOOST_CHECK_EQUAL(difi::unpack_u32(&packed[16]), 1700000000U);
+    BOOST_CHECK_EQUAL(difi::unpack_u64(&packed[20]), 250000000000ULL);
+    BOOST_CHECK_EQUAL(difi::unpack_u32(&packed[28]), difi::FLOW_CONTROL_CAM);
+    BOOST_CHECK_EQUAL(difi::unpack_u32(&packed[32]), 1234U);
+    BOOST_CHECK_EQUAL(difi::unpack_u32(&packed[36]), 10U);
+    BOOST_CHECK_EQUAL(difi::unpack_u32(&packed[40]), 20U);
+    BOOST_CHECK_EQUAL(difi::unpack_u32(&packed[44]), 0x40300002U);
 
     auto parsed_tx = difi::parse_flow_control(packed.data(), packed.size());
     BOOST_REQUIRE(parsed_tx.has_value());

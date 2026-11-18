@@ -231,17 +231,21 @@ public:
      * Represents the 84-byte (21 32-bit words) timing flow control packet defined in
      * IEEE-ISTO 4900-2021 Section 4.3 and VITA 49.2, used by hardware to communicate
      * buffer fill level and status back to the stream source.
+     *
+     * The word numbers below start at 0. The tables of the standard number
+     * the same words from 1. Word 7 holds the CAM field, which has a fixed
+     * value (FLOW_CONTROL_CAM) and is not stored here.
      */
     struct DIFI_API flow_control {
         packet_type type = packet_type::command; ///< Packet type (6)
         uint8_t pkt_n = 0;              ///< Modulo-16 sequence number
         uint32_t stream_id = 0;         ///< Stream identifier (word 1)
         uint64_t class_id = 0;          ///< Class identifier (words 2-3)
-        uint32_t message_id = 0;        ///< Message ID (word 4)
-        uint32_t controllee_id = 0;     ///< Controllee ID (word 5)
-        uint32_t controller_id = 0;     ///< Controller ID (word 6)
-        uint32_t full = 0;              ///< Integer seconds timestamp (word 7)
-        uint64_t frac = 0;              ///< Fractional timestamp (words 8-9)
+        uint32_t message_id = 0;        ///< Message ID (word 8)
+        uint32_t controllee_id = 0;     ///< Controllee ID (word 9)
+        uint32_t controller_id = 0;     ///< Controller ID (word 10)
+        uint32_t full = 0;              ///< Integer seconds timestamp (word 4)
+        uint64_t frac = 0;              ///< Fractional timestamp (words 5-6)
         uint32_t cif0 = 0;              ///< Control Indicator Field 0 (word 11)
         uint32_t cif1 = 0;              ///< Control Indicator Field 1 (word 12)
         reference_point ref_point = reference_point::if_converter; ///< Reference Point (word 13)
@@ -268,6 +272,12 @@ public:
     static constexpr size_t ALT_CONTEXT_SIZE = 72;
     static constexpr size_t FLOW_CONTROL_SIZE = 84;
     static constexpr size_t FLOW_CONTROL_WORDS = 21;
+    /**
+     * CAM field of a flow control packet. The standard fixes its value: the
+     * controllee and controller IDs are present as 32-bit words, the action
+     * is "execute" and the timing control is set to 1.
+     */
+    static constexpr uint32_t FLOW_CONTROL_CAM = 0xa1001000U;
     static constexpr uint8_t PACKET_MOD = 16;
     static constexpr uint64_t PICO_PER_SEC = 1000000000000ULL;
 

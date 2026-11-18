@@ -517,12 +517,17 @@ std::optional<difi::flow_control> difi::parse_flow_control(const void* buf, size
 
     fc.stream_id = unpack_u32(&in[4]);
     fc.class_id = unpack_u64(&in[8]);
-    fc.message_id = unpack_u32(&in[16]);
-    fc.controllee_id = unpack_u32(&in[20]);
-    fc.controller_id = unpack_u32(&in[24]);
-    fc.full = unpack_u32(&in[28]);
-    fc.frac = unpack_u64(&in[32]);
-    // in[40..43] is reserved / CAM
+    fc.full = unpack_u32(&in[16]);
+    fc.frac = unpack_u64(&in[20]);
+    // in[28..31] is the CAM field, which the standard fixes to FLOW_CONTROL_CAM
+    fc.message_id = unpack_u32(&in[32]);
+    /*
+     * The packet tables of the standard and of VITA 49.2 put the Controllee
+     * ID before the Controller ID. The text below the tables lists them in
+     * the opposite order. We follow the tables.
+     */
+    fc.controllee_id = unpack_u32(&in[36]);
+    fc.controller_id = unpack_u32(&in[40]);
     fc.cif0 = unpack_u32(&in[44]);
     fc.cif1 = unpack_u32(&in[48]);
     fc.ref_point = static_cast<reference_point>(unpack_u32(&in[52]));
@@ -583,12 +588,12 @@ void difi::pack_flow_control(const flow_control& fc, std::span<uint8_t> out)
                                             : information_class::bit_padding_data_plane);
     }
     pack_u64(&p[8], cid);
-    pack_u32(&p[16], fc.message_id);
-    pack_u32(&p[20], fc.controllee_id);
-    pack_u32(&p[24], fc.controller_id);
-    pack_u32(&p[28], fc.full);
-    pack_u64(&p[32], fc.frac);
-    pack_u32(&p[40], 0); // Reserved
+    pack_u32(&p[16], fc.full);
+    pack_u64(&p[20], fc.frac);
+    pack_u32(&p[28], FLOW_CONTROL_CAM);
+    pack_u32(&p[32], fc.message_id);
+    pack_u32(&p[36], fc.controllee_id);
+    pack_u32(&p[40], fc.controller_id);
 
     uint32_t cif0 = fc.cif0 != 0 ? fc.cif0 : 0x40300002U;
     uint32_t cif1 = fc.cif1 != 0 ? fc.cif1 : 0x00000002U;
